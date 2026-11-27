@@ -1,0 +1,4 @@
+/* Responsive, print and [hidden] rules */
+@media(max-width:860px){.ws{grid-template-columns:1fr}.nb{padding:10px 14px;flex-wrap:wrap}.hero h1{font-size:1.5rem}.usr{display:none}}
+@media print{:root,:root[data-theme=dark]{--sf:#fff;--ink:#000;--mute:#333;--bg:#fff}.nb,.noprint,.tg{display:none!important}body{background:#fff}}
+[hidden]{display:none!important}
