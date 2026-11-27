@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import type { Answer, Attempt, Question } from "@prisma/client";
+import { Prisma, type Answer, type Attempt, type Question } from "@prisma/client";
 import type {
   AttemptItemSnapshot,
   ExamSummaryMetrics,
@@ -205,6 +205,7 @@ export async function finalizeAttemptAtomic(
 
     let totalAwarded = 0;
     let needsManual = false;
+    const autoScoreUpdates: Array<{ id: string; score: number }> = [];
 
     for (const item of items) {
       const ans = answerMap.get(item.questionId);
@@ -221,12 +222,20 @@ export async function finalizeAttemptAtomic(
         const score = gradeObjectiveItem(item, selected) ?? 0;
         totalAwarded += score;
         if (ans) {
-          await tx.answer.update({
-            where: { id: ans.id },
-            data: { autoScore: score },
-          });
+          autoScoreUpdates.push({ id: ans.id, score });
         }
       }
+    }
+
+    if (autoScoreUpdates.length > 0) {
+      const valueTuples = autoScoreUpdates.map(
+        (u) => Prisma.sql`(${u.id}, ${u.score}::double precision)`
+      );
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE answers AS a SET auto_score = v.score FROM (VALUES ${Prisma.join(
+          valueTuples
+        )}) AS v(id, score) WHERE a.id = v.id`
+      );
     }
 
     const now = new Date();
@@ -278,9 +287,9 @@ export async function expireStaleAttempts(examId?: string): Promise<void> {
     },
     select: { id: true },
   });
-  for (const att of stale) {
-    await finalizeAttemptInTx(att.id, "expired");
-  }
+  await Promise.all(
+    stale.map((att) => finalizeAttemptInTx(att.id, "expired"))
+  );
 }
 
 export function computeExamAnalytics(

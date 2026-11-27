@@ -117,6 +117,8 @@ model Exam {
   attempts      Attempt[]
   announcements Announcement[]
 
+  @@index([createdById])
+  @@index([status])
   @@map("exams")
 }
 
@@ -142,6 +144,7 @@ model Enrollment {
   candidate User @relation(fields: [candidateId], references: [id], onDelete: Cascade)
 
   @@unique([examId, candidateId])
+  @@index([candidateId])
   @@map("enrollments")
 }
 
@@ -166,6 +169,8 @@ model Attempt {
   incidents Incident[]
 
   @@unique([examId, candidateId])
+  @@index([candidateId])
+  @@index([status, serverExpiresAt])
   @@map("attempts")
 }
 
@@ -197,6 +202,7 @@ model Incident {
 
   attempt Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
+  @@index([attemptId, createdAt])
   @@map("incidents")
 }
 
@@ -209,6 +215,7 @@ model Announcement {
 
   exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
 
+  @@index([examId, createdAt])
   @@map("announcements")
 }
 
@@ -222,5 +229,6 @@ model AuditLog {
 
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
+  @@index([createdAt])
   @@map("audit_logs")
 }

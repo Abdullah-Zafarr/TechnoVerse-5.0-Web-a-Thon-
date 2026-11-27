@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { canManageExam, requireRole } from "@/lib/auth";
-import { computeStratifiedQuotas, expireStaleAttempts } from "@/lib/grading";
+import { computeStratifiedQuotas, finalizeAttemptInTx } from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import type { ExamStatus } from "@/lib/types";
 import {
@@ -40,7 +40,6 @@ export async function GET() {
   const auth = await requireRole(["admin", "examiner", "candidate"]);
   if (auth.error) return auth.error;
 
-  await expireStaleAttempts();
   const now = new Date();
 
   if (auth.user.role === "candidate") {
@@ -52,9 +51,20 @@ export async function GET() {
       include: {
         exam: {
           include: {
-            examQuestions: true,
+            _count: { select: { examQuestions: true } },
             attempts: {
               where: { candidateId: auth.user.id },
+              select: {
+                id: true,
+                status: true,
+                gradingState: true,
+                startedAt: true,
+                submittedAt: true,
+                serverExpiresAt: true,
+                totalPossibleMarks: true,
+                totalAwardedMarks: true,
+                verificationCode: true,
+              },
             },
           },
         },
@@ -62,8 +72,34 @@ export async function GET() {
       orderBy: { exam: { windowStart: "asc" } },
     });
 
+    const staleAttempts = enrollments
+      .map(({ exam }) => exam.attempts[0])
+      .filter(
+        (att): att is NonNullable<typeof att> =>
+          Boolean(att) &&
+          att.status === "in_progress" &&
+          now >= att.serverExpiresAt
+      );
+
+    const finalizedById = new Map<
+      string,
+      NonNullable<Awaited<ReturnType<typeof finalizeAttemptInTx>>>
+    >();
+    if (staleAttempts.length > 0) {
+      const doneList = await Promise.all(
+        staleAttempts.map((att) => finalizeAttemptInTx(att.id, "expired"))
+      );
+      for (const done of doneList) {
+        if (done) finalizedById.set(done.id, done);
+      }
+    }
+
     const exams = enrollments.map(({ exam }) => {
-      const myAttempt = exam.attempts[0] ?? null;
+      const rawAttempt = exam.attempts[0] ?? null;
+      const myAttempt =
+        rawAttempt && finalizedById.has(rawAttempt.id)
+          ? finalizedById.get(rawAttempt.id)!
+          : rawAttempt;
       const hasActiveGraceAttempt =
         myAttempt?.status === "in_progress" && now < myAttempt.serverExpiresAt;
       const canEnter =
@@ -82,7 +118,7 @@ export async function GET() {
         totalMarks: exam.totalMarks,
         windowStart: exam.windowStart.toISOString(),
         windowEnd: exam.windowEnd.toISOString(),
-        questionsPerPaper: exam.questionsPerPaper ?? exam.examQuestions.length,
+        questionsPerPaper: exam.questionsPerPaper ?? exam._count.examQuestions,
         resultsPublished: exam.resultsPublished,
         canEnter,
         myAttempt: myAttempt
@@ -116,9 +152,12 @@ export async function GET() {
     include: {
       examQuestions: {
         orderBy: { position: "asc" },
-        include: { question: { select: { difficulty: true } } },
+        select: {
+          questionId: true,
+          question: { select: { difficulty: true } },
+        },
       },
-      enrollments: true,
+      enrollments: { select: { candidateId: true } },
       _count: { select: { attempts: true } },
     },
     orderBy: { createdAt: "desc" },

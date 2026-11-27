@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { canManageExam, requireRole } from "@/lib/auth";
-import { computeExamAnalytics, expireStaleAttempts } from "@/lib/grading";
+import { computeExamAnalytics, finalizeAttemptInTx } from "@/lib/grading";
 import { sanitizePdfFilename, sanitizePdfText, wrapPdfText } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
 
@@ -20,7 +20,14 @@ export async function GET(
         include: { question: true },
         orderBy: { position: "asc" },
       },
-      enrollments: true,
+      _count: { select: { enrollments: true } },
+      attempts: {
+        include: {
+          candidate: { select: { name: true, email: true } },
+          answers: true,
+        },
+        orderBy: { totalAwardedMarks: "desc" },
+      },
     },
   });
 
@@ -31,17 +38,29 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  await expireStaleAttempts(exam.id);
+  const now = new Date();
+  const staleIds = exam.attempts
+    .filter((a) => a.status === "in_progress" && now >= a.serverExpiresAt)
+    .map((a) => a.id);
 
-  const attempts = await prisma.attempt.findMany({
-    where: { examId: exam.id },
-    include: { candidate: true, answers: true },
-    orderBy: { totalAwardedMarks: "desc" },
-  });
+  let attempts = exam.attempts;
+  if (staleIds.length > 0) {
+    await Promise.all(
+      staleIds.map((id) => finalizeAttemptInTx(id, "expired"))
+    );
+    attempts = await prisma.attempt.findMany({
+      where: { examId: exam.id },
+      include: {
+        candidate: { select: { name: true, email: true } },
+        answers: true,
+      },
+      orderBy: { totalAwardedMarks: "desc" },
+    });
+  }
 
   const { summary, questionRows } = computeExamAnalytics(
     exam.examQuestions.map((eq) => eq.question),
-    exam.enrollments.length,
+    exam._count.enrollments,
     attempts
   );
 

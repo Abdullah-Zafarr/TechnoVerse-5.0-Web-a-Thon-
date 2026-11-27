@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ShieldAlert } from "lucide-react";
-import TopNav from "@/components/TopNav";
+import { ArrowLeft, ArrowRight, ShieldAlert, ShieldCheck, QrCode } from "lucide-react";
 import type { SafeUser } from "@/lib/types";
 
 const DEMO_ACCOUNTS = [
@@ -114,25 +113,59 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F8FA]">
-      <TopNav user={user} />
+    <div className="relative min-h-screen overflow-hidden bg-[#071947]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, #93C5FD 1px, transparent 1px), linear-gradient(to bottom, #93C5FD 1px, transparent 1px)",
+          backgroundSize: "44px 44px",
+          maskImage: "linear-gradient(to bottom, #000 60%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, #000 60%, transparent 100%)",
+        }}
+      />
+
+      <header className="relative z-10 border-b border-white/10">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <Link
+            href="/portal"
+            className="inline-flex min-h-[40px] items-center gap-2 text-base font-semibold tracking-tight text-white"
+          >
+            <ShieldCheck
+              className="h-5 w-5 text-[#38BDF8]"
+              aria-hidden="true"
+            />
+            <span>ExamGuard</span>
+          </Link>
+
+          <Link
+            href="/verify"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[#CBD5E1] transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <QrCode className="h-4 w-4" aria-hidden="true" />
+            <span>Verify report</span>
+          </Link>
+        </div>
+      </header>
 
       <main
         id="main-content"
-        className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-12"
+        className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-12"
       >
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A] sm:text-3xl">
-              Sign in to ExamGuard
+            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+              Sign in to <span className="text-[#38BDF8]">ExamGuard</span>
             </h1>
-            <p className="mt-1 text-sm text-[#475569]">
+            <p className="mt-1 text-sm text-[#CBD5E1]">
               Use your account credentials or launch a role workspace directly.
             </p>
           </div>
           <Link
             href="/portal"
-            className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-[rgba(15,23,42,0.12)] bg-white px-3.5 py-2 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-white/20"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             <span>Back to overview</span>
@@ -140,19 +173,19 @@ export default function LoginPage() {
         </div>
 
         {user && (
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#1D4ED8]/30 bg-[#EFF6FF] p-4">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#38BDF8]/30 bg-white/10 p-4 backdrop-blur-sm">
             <div>
-              <p className="text-sm font-medium text-[#0F172A]">
+              <p className="text-sm font-medium text-white">
                 Active session: {user.name} ({user.role})
               </p>
-              <p className="text-xs text-[#475569]">
+              <p className="text-xs text-[#CBD5E1]">
                 Continue to your workspace or sign in as another role below
               </p>
             </div>
             <button
               type="button"
               onClick={() => routeForUser(user)}
-              className="inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+              className="inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1D4ED8]"
             >
               <span>Open workspace</span>
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -161,13 +194,13 @@ export default function LoginPage() {
         )}
 
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6">
-            <h2 className="text-base font-semibold text-[#0F172A]">
+          <div className="rounded-2xl border border-white/15 bg-white/[0.08] p-6 backdrop-blur-md">
+            <h2 className="text-base font-semibold text-white">
               Sign in with credentials
             </h2>
-            <p className="mt-1 text-xs text-[#64748B]">
+            <p className="mt-1 text-xs text-[#CBD5E1]">
               Demo password{" "}
-              <code className="rounded-md bg-[#EEF2F6] px-1.5 py-0.5 font-mono text-[#0F172A]">
+              <code className="rounded-md bg-white/15 px-1.5 py-0.5 font-mono text-white">
                 demo1234
               </code>
             </p>
@@ -175,7 +208,7 @@ export default function LoginPage() {
             {error && (
               <div
                 role="alert"
-                className="mt-3 flex items-center gap-2 rounded-lg border border-[#B91C1C]/30 bg-[#FEF2F2] p-3 text-sm text-[#B91C1C]"
+                className="mt-3 flex items-center gap-2 rounded-lg border border-[#FCA5A5]/40 bg-[#7F1D1D]/60 p-3 text-sm text-[#FEE2E2]"
               >
                 <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>{error}</span>
@@ -186,7 +219,7 @@ export default function LoginPage() {
               <div>
                 <label
                   htmlFor="login-email"
-                  className="block text-xs font-medium text-[#0F172A]"
+                  className="block text-xs font-medium text-[#E2E8F0]"
                 >
                   Email address
                 </label>
@@ -200,16 +233,16 @@ export default function LoginPage() {
                     setEmail(e.target.value);
                     if (emailError) validateEmailField(e.target.value);
                   }}
-                  className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm text-[#0F172A]"
+                  className="mt-1 min-h-[40px] w-full rounded-lg border border-white/20 bg-white px-3 py-2 text-sm text-[#0F172A] focus:border-[#38BDF8] focus:outline-none"
                 />
                 {emailError && (
-                  <p className="mt-1 text-xs text-[#B91C1C]">{emailError}</p>
+                  <p className="mt-1 text-xs text-[#FCA5A5]">{emailError}</p>
                 )}
               </div>
               <div>
                 <label
                   htmlFor="login-password"
-                  className="block text-xs font-medium text-[#0F172A]"
+                  className="block text-xs font-medium text-[#E2E8F0]"
                 >
                   Password
                 </label>
@@ -219,20 +252,20 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm text-[#0F172A]"
+                  className="mt-1 min-h-[40px] w-full rounded-lg border border-white/20 bg-white px-3 py-2 text-sm text-[#0F172A] focus:border-[#38BDF8] focus:outline-none"
                 />
               </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="min-h-[40px] w-full cursor-pointer rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF] disabled:opacity-60"
+                className="min-h-[42px] w-full cursor-pointer rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1D4ED8] disabled:opacity-60"
               >
                 {loading ? "Signing in..." : "Sign in"}
               </button>
             </form>
           </div>
 
-          <div className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6">
+          <div className="rounded-2xl border border-[rgba(15,23,42,0.12)] bg-white p-6">
             <h2 className="text-base font-semibold text-[#0F172A]">
               Quick role access
             </h2>
@@ -246,7 +279,7 @@ export default function LoginPage() {
                   type="button"
                   disabled={loading}
                   onClick={() => handleDemoSignIn(acc.email, acc.route)}
-                  className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-[rgba(15,23,42,0.10)] bg-[#F6F8FA] px-3 py-2 text-left transition-colors hover:border-[#1D4ED8] hover:bg-white disabled:opacity-60"
+                  className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-[rgba(15,23,42,0.10)] bg-[#F4F7FB] px-3 py-2 text-left transition-colors hover:border-[#2563EB] hover:bg-white disabled:opacity-60"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-[#0F172A]">
@@ -257,7 +290,7 @@ export default function LoginPage() {
                     </p>
                   </div>
                   <ArrowRight
-                    className="h-4 w-4 shrink-0 text-[#1D4ED8]"
+                    className="h-4 w-4 shrink-0 text-[#2563EB]"
                     aria-hidden="true"
                   />
                 </button>

@@ -57,50 +57,89 @@ export async function GET(req: Request) {
     });
   }
 
-  if (examId) {
-    const exam = await prisma.exam.findUnique({ where: { id: examId } });
-    if (!exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
-    }
-    if (!canManageExam(auth.user, exam.createdById)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
-
   const examScope = examId
     ? { id: examId }
     : auth.user.role === "admin"
       ? undefined
       : { createdById: auth.user.id };
 
-  const rawAttempts = await prisma.attempt.findMany({
-    where: examScope ? { exam: examScope } : undefined,
-    include: {
-      candidate: true,
-      exam: true,
-      answers: true,
-      incidents: { orderBy: { createdAt: "desc" }, take: 8 },
-    },
-    orderBy: { startedAt: "desc" },
-  });
+  const [examRecord, rawAttempts, announcements] = await Promise.all([
+    examId
+      ? prisma.exam.findUnique({
+          where: { id: examId },
+          select: { id: true, createdById: true },
+        })
+      : Promise.resolve(null),
+    prisma.attempt.findMany({
+      where: examScope ? { exam: examScope } : undefined,
+      select: {
+        id: true,
+        examId: true,
+        status: true,
+        gradingState: true,
+        startedAt: true,
+        serverExpiresAt: true,
+        lastHeartbeatAt: true,
+        itemsSnapshot: true,
+        candidate: { select: { name: true, email: true } },
+        exam: { select: { code: true } },
+        answers: {
+          select: {
+            questionId: true,
+            selectedOptionIds: true,
+            writtenText: true,
+          },
+        },
+        incidents: {
+          orderBy: { createdAt: "desc" },
+          take: 8,
+          select: { id: true, type: true, detail: true, createdAt: true },
+        },
+      },
+      orderBy: { startedAt: "desc" },
+    }),
+    prisma.announcement.findMany({
+      where: examScope ? { exam: examScope } : undefined,
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
+
+  if (examId) {
+    if (!examRecord) {
+      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+    }
+    if (!canManageExam(auth.user, examRecord.createdById)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   const now = new Date();
-  const attempts = [];
-
-  for (const att of rawAttempts) {
-    let status = att.status;
-    let gradingState = att.gradingState;
-    if (att.status === "in_progress" && now > att.serverExpiresAt) {
-      const done = await finalizeAttemptInTx(att.id, "expired");
-      if (done) {
-        status = done.status;
-        gradingState = done.gradingState;
-      }
+  const staleAttempts = rawAttempts.filter(
+    (att) => att.status === "in_progress" && now > att.serverExpiresAt
+  );
+  const finalizedById = new Map<
+    string,
+    NonNullable<Awaited<ReturnType<typeof finalizeAttemptInTx>>>
+  >();
+  if (staleAttempts.length > 0) {
+    const doneList = await Promise.all(
+      staleAttempts.map((att) => finalizeAttemptInTx(att.id, "expired"))
+    );
+    for (const done of doneList) {
+      if (done) finalizedById.set(done.id, done);
     }
+  }
+
+  const attempts = rawAttempts.map((att) => {
+    const done = finalizedById.get(att.id);
+    const status = done?.status ?? att.status;
+    const gradingState = done?.gradingState ?? att.gradingState;
 
     const items = att.itemsSnapshot as unknown as AttemptItemSnapshot[];
+    const answerByQ = new Map(att.answers.map((a) => [a.questionId, a]));
     const answeredCount = items.filter((item) => {
-      const ans = att.answers.find((a) => a.questionId === item.questionId);
+      const ans = answerByQ.get(item.questionId);
       if (!ans) return false;
       if (item.type === "written") return ans.writtenText.trim().length > 0;
       const sel = Array.isArray(ans.selectedOptionIds)
@@ -109,7 +148,7 @@ export async function GET(req: Request) {
       return sel.length > 0;
     }).length;
 
-    attempts.push({
+    return {
       id: att.id,
       examId: att.examId,
       examCode: att.exam.code,
@@ -128,13 +167,7 @@ export async function GET(req: Request) {
         detail: i.detail,
         timestamp: i.createdAt.toISOString(),
       })),
-    });
-  }
-
-  const announcements = await prisma.announcement.findMany({
-    where: examScope ? { exam: examScope } : undefined,
-    orderBy: { createdAt: "desc" },
-    take: 20,
+    };
   });
 
   return NextResponse.json({

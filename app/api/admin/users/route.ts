@@ -1,7 +1,22 @@
 import { NextResponse } from "next/server";
-import { hashPassword, requireRole, sanitizeUser } from "@/lib/auth";
+import {
+  hashPassword,
+  invalidateUserCache,
+  primeUserCache,
+  requireRole,
+  sanitizeUser,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createUserSchema, safeParseJson, updateUserSchema } from "@/lib/validation";
+
+const SAFE_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  active: true,
+  createdAt: true,
+} as const;
 
 export async function GET() {
   const auth = await requireRole(["admin", "examiner"]);
@@ -10,6 +25,7 @@ export async function GET() {
   if (auth.user.role === "examiner") {
     const candidates = await prisma.user.findMany({
       where: { role: "candidate" },
+      select: SAFE_USER_SELECT,
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({
@@ -19,7 +35,10 @@ export async function GET() {
   }
 
   const [users, auditLogs] = await Promise.all([
-    prisma.user.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.user.findMany({
+      select: SAFE_USER_SELECT,
+      orderBy: { createdAt: "desc" },
+    }),
     prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
   ]);
 
@@ -131,5 +150,12 @@ export async function PATCH(req: Request) {
     return u;
   }, { maxWait: 10_000, timeout: 15_000 });
 
-  return NextResponse.json({ user: sanitizeUser(updated) });
+  const safeUpdated = sanitizeUser(updated);
+  if (safeUpdated.active) {
+    primeUserCache(safeUpdated);
+  } else {
+    invalidateUserCache(safeUpdated.id);
+  }
+
+  return NextResponse.json({ user: safeUpdated });
 }

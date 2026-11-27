@@ -2,12 +2,24 @@ import { NextResponse } from "next/server";
 import { canManageExam, requireRole } from "@/lib/auth";
 import {
   computeExamAnalytics,
-  expireStaleAttempts,
+  finalizeAttemptInTx,
   gradeObjectiveItem,
 } from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import type { AttemptItemSnapshot } from "@/lib/types";
 import { manualGradeSchema, safeParseJson } from "@/lib/validation";
+
+const GRADING_EXAM_INCLUDE = {
+  examQuestions: { include: { question: true } },
+  _count: { select: { enrollments: true } },
+  attempts: {
+    include: {
+      candidate: { select: { name: true, email: true } },
+      answers: true,
+    },
+    orderBy: { startedAt: "desc" as const },
+  },
+};
 
 export async function GET(req: Request) {
   const auth = await requireRole(["admin", "examiner"]);
@@ -18,10 +30,7 @@ export async function GET(req: Request) {
   const exam = examIdParam
     ? await prisma.exam.findUnique({
         where: { id: examIdParam },
-        include: {
-          examQuestions: { include: { question: true } },
-          enrollments: true,
-        },
+        include: GRADING_EXAM_INCLUDE,
       })
     : await prisma.exam.findFirst({
         where:
@@ -29,10 +38,7 @@ export async function GET(req: Request) {
             ? undefined
             : { createdById: auth.user.id },
         orderBy: { createdAt: "desc" },
-        include: {
-          examQuestions: { include: { question: true } },
-          enrollments: true,
-        },
+        include: GRADING_EXAM_INCLUDE,
       });
 
   if (!exam) {
@@ -48,21 +54,29 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  await expireStaleAttempts(exam.id);
+  const now = new Date();
+  const staleIds = exam.attempts
+    .filter((a) => a.status === "in_progress" && now >= a.serverExpiresAt)
+    .map((a) => a.id);
 
-  const attempts = await prisma.attempt.findMany({
-    where: { examId: exam.id },
-    include: {
-      candidate: true,
-      answers: true,
-      incidents: true,
-    },
-    orderBy: { startedAt: "desc" },
-  });
+  let attempts = exam.attempts;
+  if (staleIds.length > 0) {
+    await Promise.all(
+      staleIds.map((id) => finalizeAttemptInTx(id, "expired"))
+    );
+    attempts = await prisma.attempt.findMany({
+      where: { examId: exam.id },
+      include: {
+        candidate: { select: { name: true, email: true } },
+        answers: true,
+      },
+      orderBy: { startedAt: "desc" },
+    });
+  }
 
   const { summary, questionRows } = computeExamAnalytics(
     exam.examQuestions.map((eq) => eq.question),
-    exam.enrollments.length,
+    exam._count.enrollments,
     attempts
   );
 

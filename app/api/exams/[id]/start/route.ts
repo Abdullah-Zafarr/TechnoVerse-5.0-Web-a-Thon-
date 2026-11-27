@@ -42,10 +42,12 @@ async function resumeExistingAttempt(
     );
   }
 
-  await prisma.attempt.update({
-    where: { id: attempt.id },
-    data: { lastHeartbeatAt: now },
-  });
+  void prisma.attempt
+    .update({
+      where: { id: attempt.id },
+      data: { lastHeartbeatAt: now },
+    })
+    .catch(() => {});
 
   const snapItems = attempt.itemsSnapshot as unknown as AttemptItemSnapshot[];
   const answerMap = Object.fromEntries(
@@ -160,6 +162,11 @@ export async function POST(
       },
       enrollments: {
         where: { candidateId: auth.user.id },
+        select: { id: true },
+      },
+      attempts: {
+        where: { candidateId: auth.user.id },
+        include: { answers: true },
       },
     },
   });
@@ -181,12 +188,7 @@ export async function POST(
   }
 
   const now = new Date();
-  const existingAttempt = await prisma.attempt.findUnique({
-    where: {
-      examId_candidateId: { examId: exam.id, candidateId: auth.user.id },
-    },
-    include: { answers: true },
-  });
+  const existingAttempt = exam.attempts[0] ?? null;
 
   if (existingAttempt) {
     // Allow resuming an active attempt with examiner-granted grace past windowEnd

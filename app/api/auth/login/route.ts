@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { attachSessionCookie, sanitizeUser, verifyPassword } from "@/lib/auth";
+import {
+  attachSessionCookie,
+  primeUserCache,
+  sanitizeUser,
+  verifyPassword,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { loginSchema, safeParseJson } from "@/lib/validation";
 
@@ -77,16 +82,21 @@ export async function POST(req: Request) {
       );
     }
 
-    await prisma.auditLog.create({
-      data: {
-        actorId: user.id,
-        actorEmail: user.email,
-        action: "PASSWORD_LOGIN",
-        target: `Role ${user.role}`,
-      },
-    });
+    const safeUser = sanitizeUser(user);
+    primeUserCache(safeUser);
 
-    const res = NextResponse.json({ user: sanitizeUser(user) });
+    void prisma.auditLog
+      .create({
+        data: {
+          actorId: user.id,
+          actorEmail: user.email,
+          action: "PASSWORD_LOGIN",
+          target: `Role ${user.role}`,
+        },
+      })
+      .catch(() => {});
+
+    const res = NextResponse.json({ user: safeUser });
     attachSessionCookie(res, user.id);
     return res;
   } catch {

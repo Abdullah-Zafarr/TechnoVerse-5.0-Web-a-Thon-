@@ -41,7 +41,9 @@ export function verifyPassword(password: string, passwordHash: string): boolean 
   }
 }
 
-export function sanitizeUser(user: User): SafeUser {
+export function sanitizeUser(
+  user: Pick<User, "id" | "name" | "email" | "role" | "active" | "createdAt">
+): SafeUser {
   return {
     id: user.id,
     name: user.name,
@@ -50,6 +52,50 @@ export function sanitizeUser(user: User): SafeUser {
     active: user.active,
     createdAt: user.createdAt.toISOString(),
   };
+}
+
+const USER_CACHE_TTL_MS = 30_000;
+
+interface CachedUserEntry {
+  user: SafeUser | null;
+  expiresAt: number;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __examguardUserCache: Map<string, CachedUserEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __examguardUserInflight:
+    | Map<string, Promise<SafeUser | null>>
+    | undefined;
+}
+
+const userCache =
+  globalThis.__examguardUserCache ??
+  (globalThis.__examguardUserCache = new Map<string, CachedUserEntry>());
+
+const userInflight =
+  globalThis.__examguardUserInflight ??
+  (globalThis.__examguardUserInflight = new Map<
+    string,
+    Promise<SafeUser | null>
+  >());
+
+export function primeUserCache(user: SafeUser): void {
+  userCache.set(user.id, {
+    user: user.active ? user : null,
+    expiresAt: Date.now() + USER_CACHE_TTL_MS,
+  });
+  if (userCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of userCache) {
+      if (v.expiresAt <= now) userCache.delete(k);
+    }
+  }
+}
+
+export function invalidateUserCache(userId: string): void {
+  userCache.delete(userId);
 }
 
 export function canManageExam(user: SafeUser, createdById: string): boolean {
@@ -103,20 +149,50 @@ export async function getSessionUser(): Promise<SafeUser | null> {
   const payload = verifySessionToken(token);
   if (!payload) return null;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: payload.uid },
-      });
-      if (!user || !user.active) return null;
-      return sanitizeUser(user);
-    } catch {
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 150));
+  const now = Date.now();
+  const cached = userCache.get(payload.uid);
+  if (cached && cached.expiresAt > now) {
+    return cached.user;
+  }
+
+  const inflight = userInflight.get(payload.uid);
+  if (inflight) return inflight;
+
+  const lookup = (async (): Promise<SafeUser | null> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: payload.uid },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            active: true,
+            createdAt: true,
+          },
+        });
+        const safe = user && user.active ? sanitizeUser(user) : null;
+        userCache.set(payload.uid, {
+          user: safe,
+          expiresAt: Date.now() + USER_CACHE_TTL_MS,
+        });
+        return safe;
+      } catch {
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 150));
+        }
       }
     }
+    return null;
+  })();
+
+  userInflight.set(payload.uid, lookup);
+  try {
+    return await lookup;
+  } finally {
+    userInflight.delete(payload.uid);
   }
-  return null;
 }
 
 export async function requireRole(
