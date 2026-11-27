@@ -158,6 +158,15 @@ function parseOptionsField(raw: unknown, row?: RawRecord): QuestionOption[] {
     return out;
   }
 
+  if (typeof raw === "object" && raw !== null) {
+    return Object.entries(raw as Record<string, unknown>)
+      .map(([k, v], idx) => ({
+        id: asTrimmedString(k) || `o${idx + 1}`,
+        text: asTrimmedString(v),
+      }))
+      .filter((o) => o.text.length > 0);
+  }
+
   const pipeOptions = asTrimmedString(raw)
     .split("|")
     .map((s) => s.trim())
@@ -323,15 +332,15 @@ export function validateQuestionRows(
     if (type !== "written") {
       for (const token of rawCorrect) {
         const numeric = Number(token);
-        if (token !== "" && Number.isFinite(numeric)) {
-          if (
-            !Number.isInteger(numeric) ||
-            numeric < 1 ||
-            numeric > options.length
-          ) {
-            hasInvalidIndex = true;
-            break;
-          }
+        const textMatch = options.find(
+          (o) => o.text.toLowerCase() === token.toLowerCase()
+        );
+        if (
+          token !== "" &&
+          Number.isInteger(numeric) &&
+          numeric >= 1 &&
+          numeric <= options.length
+        ) {
           mappedCorrect.push(options[numeric - 1].id);
         } else if (optionIds.has(token)) {
           mappedCorrect.push(token);
@@ -342,6 +351,8 @@ export function validateQuestionRows(
             break;
           }
           mappedCorrect.push(options[letterIdx].id);
+        } else if (textMatch) {
+          mappedCorrect.push(textMatch.id);
         } else {
           hasInvalidIndex = true;
           break;

@@ -419,6 +419,30 @@ test("importParser: supports question aliases, option1..option4 columns, mcq ali
   assert.deepEqual(res.validQuestions[0].correctOptionIds, ["o1"]);
 });
 
+test("importParser: handles JSON aliases, option maps, omitted title, and exact-text answer", () => {
+  const json = JSON.stringify({
+    data: [
+      {
+        question: "Which status code means Not Found?",
+        type: "mcq",
+        options: { a: "200", b: "404", c: "500" },
+        answer: "404",
+      },
+    ],
+  });
+
+  const parsed = parseImportRows("json", json, "questions");
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  const res = validateQuestionRows(parsed.rows, parsed.badRowIndices);
+  assert.equal(res.errors.length, 0);
+  assert.equal(res.validQuestions.length, 1);
+  assert.equal(res.validQuestions[0].title, "Which status code means Not Found?");
+  assert.equal(res.validQuestions[0].type, "single_mcq");
+  assert.deepEqual(res.validQuestions[0].correctOptionIds, ["b"]);
+});
+
 test("importParser: handles JSON option objects, correctOptionIds, wrapped arrays, and candidate aliases", () => {
   const jsonQuestions = JSON.stringify({
     questions: [
