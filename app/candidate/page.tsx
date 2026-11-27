@@ -399,7 +399,7 @@ export default function CandidatePage() {
                 {user ? (
                   <>
                     <span>{user.email}</span>
-                    <span aria-hidden="true"> Â· </span>
+                    <span aria-hidden="true"> &middot; </span>
                     <span>
                       Member since{" "}
                       {new Date(user.createdAt).toLocaleDateString(undefined, {
@@ -492,34 +492,147 @@ export default function CandidatePage() {
             </section>
 
             <section aria-label="Recent published results">
-              <h2 className="text-2xl font-bold tracking-tight text-[#0F172A]">
-                Recent Published Results
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-[#0F172A]">
+                    Recent Published Results
+                  </h2>
+                  <p className="mt-1 text-sm text-[#64748B]">
+                    Verified scores, question breakdowns, and downloadable PDF reports.
+                  </p>
+                </div>
+                {scored.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setTab("completed")}
+                    className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-xl border border-[rgba(15,23,42,0.12)] bg-white px-4 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                  >
+                    View all in Completed ({completed.length})
+                  </button>
+                )}
+              </div>
               {scored.length === 0 ? (
-                <p className="mt-3 text-sm text-[#64748B]">
-                  No published results yet.
-                </p>
+                <div className="mt-4 rounded-2xl border border-[rgba(15,23,42,0.08)] bg-white p-6 text-sm text-[#64748B]">
+                  No published results yet. Once an examiner publishes your graded attempt, your score and report will appear here.
+                </div>
               ) : (
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  {scored.map((e) => (
-                    <div
-                      key={e.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs text-[#64748B]">
-                          {e.code} · {subjectOf(e.code)}
-                        </p>
-                        <p className="truncate font-semibold text-[#0F172A]">
-                          {e.title}
-                        </p>
-                      </div>
-                      <span className="font-mono text-lg font-semibold tabular-nums text-[#0F172A]">
-                        {e.myAttempt!.totalAwardedMarks} /{" "}
-                        {e.myAttempt!.totalPossibleMarks}
-                      </span>
-                    </div>
-                  ))}
+                <div className="mt-5 grid gap-6 md:grid-cols-2">
+                  {scored.map((e) => {
+                    const attempt = e.myAttempt!;
+                    const awarded = attempt.totalAwardedMarks ?? 0;
+                    const possible = attempt.totalPossibleMarks;
+                    const pct =
+                      possible > 0 ? Math.round((awarded / possible) * 1000) / 10 : 0;
+                    const tier =
+                      pct >= 80
+                        ? {
+                            badge: "border-[#86EFAC] bg-[#ECFDF5] text-[#047857]",
+                            bar: "bg-[#10B981]",
+                          }
+                        : pct >= 50
+                          ? {
+                              badge: "border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]",
+                              bar: "bg-[#2563EB]",
+                            }
+                          : {
+                              badge: "border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]",
+                              bar: "bg-[#EF4444]",
+                            };
+                    const submittedLabel = attempt.submittedAt
+                      ? fmt(attempt.submittedAt)
+                      : fmt(e.windowEnd);
+
+                    return (
+                      <article
+                        key={e.id}
+                        className="flex flex-col overflow-hidden rounded-2xl border border-[rgba(15,23,42,0.08)] bg-white shadow-sm"
+                      >
+                        <div className="flex-1 p-6">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-[#64748B]">
+                              <span className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 font-mono font-semibold text-[#1D4ED8]">
+                                {e.code}
+                              </span>
+                              <span className="font-medium text-[#475569]">
+                                {subjectOf(e.code)}
+                              </span>
+                              <span aria-hidden="true">&middot;</span>
+                              <span>{submittedLabel}</span>
+                            </div>
+                            <span
+                              className={`rounded-full border px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums ${tier.badge}`}
+                            >
+                              {pct}%
+                            </span>
+                          </div>
+
+                          <div className="mt-4 flex items-baseline justify-between gap-4">
+                            <h3 className="min-w-0 text-lg font-bold leading-snug text-[#0F172A]">
+                              {e.title}
+                            </h3>
+                            <div className="shrink-0 text-right font-mono tabular-nums">
+                              <span className="text-2xl font-bold text-[#0F172A]">
+                                {awarded}
+                              </span>
+                              <span className="text-sm text-[#64748B]">
+                                {" "}
+                                / {possible}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div
+                            className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#EEF2F6]"
+                            role="progressbar"
+                            aria-valuenow={Math.round(pct)}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`${e.title} score ${pct}%`}
+                          >
+                            <div
+                              className={`h-full rounded-full transition-[width] duration-300 ${tier.bar}`}
+                              style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[rgba(15,23,42,0.08)] bg-[#FAFBFD] px-5 py-3">
+                          {attempt.verificationCode ? (
+                            <Link
+                              href={`/verify/${attempt.verificationCode}`}
+                              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[#1D4ED8]/25 bg-[#EFF6FF] px-2.5 font-mono text-xs font-medium text-[#1D4ED8] transition-colors hover:bg-[#DBEAFE]"
+                            >
+                              <QrCode className="h-3.5 w-3.5" aria-hidden="true" />
+                              {attempt.verificationCode}
+                            </Link>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#047857]">
+                              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                              Published
+                            </span>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={breakdownLoading}
+                              onClick={() => openBreakdown(attempt.id)}
+                              className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-3 text-xs font-semibold text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                            >
+                              <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                              Breakdown
+                            </button>
+                            <a
+                              href={`/api/reports/${attempt.id}/pdf`}
+                              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-3 text-xs font-semibold text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                            >
+                              <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+                              PDF
+                            </a>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </section>
