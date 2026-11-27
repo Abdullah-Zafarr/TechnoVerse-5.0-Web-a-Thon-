@@ -18,6 +18,7 @@ import {
   Info,
   CheckCircle2,
   AlertCircle,
+  ChevronDown,
 } from "lucide-react";
 import TopNav from "@/components/TopNav";
 import {
@@ -252,6 +253,10 @@ export default function ExaminerWorkspaceClient({
   const [candidates, setCandidates] = useState<SafeUser[]>(() =>
     initialLoaded ? initialCandidates : []
   );
+
+  // Collapsible form panels (hidden until toggled)
+  const [showCreateExamForm, setShowCreateExamForm] = useState(false);
+  const [showQuestionForm, setShowQuestionForm] = useState(false);
 
   // Create exam form
   const [examCode, setExamCode] = useState("CS-399");
@@ -584,6 +589,7 @@ export default function ExaminerWorkspaceClient({
   }
 
   function startEditQuestion(q: ExaminerQuestion) {
+    setShowQuestionForm(true);
     setEditingQId(q.id);
     setQTitle(q.title);
     setQPrompt(q.prompt);
@@ -942,22 +948,22 @@ export default function ExaminerWorkspaceClient({
               ))}
             </nav>
 
-            <dl className="hidden space-y-3 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 text-xs lg:block">
-              <div className="flex items-center justify-between">
+            <dl className="grid grid-cols-3 gap-2 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-3 text-xs lg:block lg:space-y-3 lg:p-4">
+              <div className="flex flex-col gap-0.5 lg:flex-row lg:items-center lg:justify-between">
                 <dt className="text-[#64748B]">Managed exams</dt>
-                <dd className="font-mono font-semibold tabular-nums text-[#0F172A]">
+                <dd className="font-mono text-sm font-semibold tabular-nums text-[#0F172A] lg:text-xs">
                   {exams.length}
                 </dd>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-0.5 lg:flex-row lg:items-center lg:justify-between">
                 <dt className="text-[#64748B]">Question bank</dt>
-                <dd className="font-mono font-semibold tabular-nums text-[#0F172A]">
+                <dd className="font-mono text-sm font-semibold tabular-nums text-[#0F172A] lg:text-xs">
                   {questions.length}
                 </dd>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-0.5 lg:flex-row lg:items-center lg:justify-between">
                 <dt className="text-[#64748B]">Candidates</dt>
-                <dd className="font-mono font-semibold tabular-nums text-[#0F172A]">
+                <dd className="font-mono text-sm font-semibold tabular-nums text-[#0F172A] lg:text-xs">
                   {candidates.length}
                 </dd>
               </div>
@@ -966,13 +972,36 @@ export default function ExaminerWorkspaceClient({
 
           <div className="min-w-0 flex-1">
             {tab === "exams" && (
-              <div className="grid gap-6 xl:grid-cols-12">
+              <div className="grid items-start gap-6 xl:grid-cols-12">
                 <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6 xl:col-span-5">
-                  <div className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
-                    <Plus className="h-4 w-4 text-[#1D4ED8]" aria-hidden="true" />
-                    <h2>Create examination</h2>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
+                      <Plus className="h-4 w-4 text-[#1D4ED8]" aria-hidden="true" />
+                      <h2>Create examination</h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateExamForm((prev) => !prev)}
+                      aria-expanded={showCreateExamForm}
+                      aria-controls="create-exam-form"
+                      aria-label={
+                        showCreateExamForm
+                          ? "Hide create examination form"
+                          : "Show create examination form"
+                      }
+                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform duration-200 ${
+                          showCreateExamForm ? "rotate-180" : ""
+                        }`}
+                        aria-hidden="true"
+                      />
+                    </button>
                   </div>
+                  {showCreateExamForm && (
                   <form
+                    id="create-exam-form"
                     onSubmit={handleCreateExam}
                     className="mt-4 space-y-3"
                     noValidate
@@ -1260,6 +1289,7 @@ export default function ExaminerWorkspaceClient({
                       Create draft exam
                     </button>
                   </form>
+                  )}
                 </section>
 
                 <section className="space-y-4 xl:col-span-7">
@@ -1401,7 +1431,7 @@ export default function ExaminerWorkspaceClient({
                                 resultsPublished: !exam.resultsPublished,
                               })
                             }
-                            className={`ml-auto inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
+                            className={`inline-flex min-h-[40px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border px-3 py-1 text-xs font-medium transition-colors sm:ml-auto sm:min-h-[36px] sm:w-auto ${
                               exam.resultsPublished
                                 ? "border-[#0F766E]/30 bg-[#F0FDFA] text-[#0F766E]"
                                 : "border-[rgba(15,23,42,0.14)] bg-white text-[#0F172A] hover:bg-[#EEF2F6]"
@@ -1428,32 +1458,59 @@ export default function ExaminerWorkspaceClient({
             )}
 
             {tab === "questions" && (
-              <div className="grid gap-6 xl:grid-cols-12">
+              <div className="grid items-start gap-6 xl:grid-cols-12">
                 <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6 xl:col-span-5">
                   <div className="flex items-center justify-between gap-2">
                     <h2 className="text-base font-semibold text-[#0F172A]">
                       {editingQId ? "Edit question" : "Add question to bank"}
                     </h2>
-                    {editingQId && (
+                    <div className="flex items-center gap-2">
+                      {editingQId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingQId(null);
+                            setQTitle("");
+                            setQPrompt("");
+                            setQRubric("");
+                          }}
+                          className="cursor-pointer text-xs font-medium text-[#1D4ED8] underline"
+                        >
+                          Cancel edit
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditingQId(null);
-                          setQTitle("");
-                          setQPrompt("");
-                          setQRubric("");
-                        }}
-                        className="cursor-pointer text-xs font-medium text-[#1D4ED8] underline"
+                        onClick={() => setShowQuestionForm((prev) => !prev)}
+                        aria-expanded={showQuestionForm}
+                        aria-controls="question-bank-form"
+                        aria-label={
+                          showQuestionForm
+                            ? "Hide question bank form"
+                            : "Show question bank form"
+                        }
+                        className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
                       >
-                        Cancel edit
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform duration-200 ${
+                            showQuestionForm ? "rotate-180" : ""
+                          }`}
+                          aria-hidden="true"
+                        />
                       </button>
-                    )}
+                    </div>
                   </div>
+                  {showQuestionForm && (
+                  <>
                   <p className="mt-1 text-xs text-[#64748B]">
                     Bank edits apply to future papers. Active attempt snapshots
                     remain locked.
                   </p>
-                  <form onSubmit={handleSaveQuestion} className="mt-4 space-y-3">
+                  <form
+                    id="question-bank-form"
+                    onSubmit={handleSaveQuestion}
+                    className="mt-4 space-y-3"
+                  >
                     <div>
                       <label
                         htmlFor="q-title"
@@ -1485,7 +1542,7 @@ export default function ExaminerWorkspaceClient({
                         className="mt-1 w-full rounded-lg border border-[rgba(15,23,42,0.16)] px-3 py-2 text-sm"
                       />
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-2">
                       <div>
                         <label
                           htmlFor="q-type"
@@ -1628,23 +1685,25 @@ export default function ExaminerWorkspaceClient({
                       {editingQId ? "Update question" : "Save question"}
                     </button>
                   </form>
+                  </>
+                  )}
                 </section>
 
                 <section className="space-y-3 xl:col-span-7">
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-3">
+                  <div className="grid grid-cols-1 gap-2 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-3 sm:flex sm:flex-wrap sm:items-center">
                     <input
                       type="search"
                       aria-label="Search questions"
                       placeholder="Search title, topic, or prompt"
                       value={qSearch}
                       onChange={(e) => setQSearch(e.target.value)}
-                      className="min-h-[40px] min-w-[180px] flex-1 rounded-lg border border-[rgba(15,23,42,0.14)] px-3 py-2 text-sm"
+                      className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] px-3 py-2 text-sm sm:min-h-[40px] sm:min-w-[180px] sm:flex-1"
                     />
                     <select
                       aria-label="Filter by topic"
                       value={qFilterTopic}
                       onChange={(e) => setQFilterTopic(e.target.value)}
-                      className="min-h-[40px] rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs"
+                      className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs sm:min-h-[40px] sm:w-auto"
                     >
                       <option value="all">All topics</option>
                       {uniqueTopics.map((topic) => (
@@ -1657,7 +1716,7 @@ export default function ExaminerWorkspaceClient({
                       aria-label="Filter by type"
                       value={qFilterType}
                       onChange={(e) => setQFilterType(e.target.value)}
-                      className="min-h-[40px] rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs"
+                      className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs sm:min-h-[40px] sm:w-auto"
                     >
                       <option value="all">All types</option>
                       <option value="single_mcq">Single MCQ</option>
@@ -1668,7 +1727,7 @@ export default function ExaminerWorkspaceClient({
                       aria-label="Filter by difficulty"
                       value={qFilterDiff}
                       onChange={(e) => setQFilterDiff(e.target.value)}
-                      className="min-h-[40px] rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs"
+                      className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs sm:min-h-[40px] sm:w-auto"
                     >
                       <option value="all">All difficulties</option>
                       <option value="easy">Easy</option>
@@ -2083,7 +2142,7 @@ export default function ExaminerWorkspaceClient({
                                   {att.candidateEmail}
                                 </p>
                               </div>
-                              <div className="text-right text-xs">
+                              <div className="text-left text-xs sm:text-right">
                                 <span className="rounded-md bg-[#0F172A] px-2 py-0.5 font-medium capitalize text-white">
                                   {att.status}
                                 </span>
@@ -2315,11 +2374,11 @@ export default function ExaminerWorkspaceClient({
 
             {tab === "grading" && (
               <div className="space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4">
-                  <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-col gap-3 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
                     <label
                       htmlFor="grade-exam-sel"
-                      className="text-sm font-medium text-[#0F172A]"
+                      className="shrink-0 text-sm font-medium text-[#0F172A]"
                     >
                       Examination
                     </label>
@@ -2327,7 +2386,7 @@ export default function ExaminerWorkspaceClient({
                       id="grade-exam-sel"
                       value={gradeExamId}
                       onChange={(e) => setGradeExamId(e.target.value)}
-                      className="min-h-[40px] rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm"
+                      className="min-h-[44px] w-full max-w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm sm:min-h-[40px] sm:w-auto"
                     >
                       {exams.map((ex) => (
                         <option key={ex.id} value={ex.id}>

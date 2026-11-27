@@ -212,7 +212,7 @@ export async function GET() {
             },
           },
           enrollments: { select: { candidateId: true } },
-          attempts: { select: { id: true } },
+          _count: { select: { attempts: true } },
         },
         orderBy: { createdAt: "desc" },
       });
@@ -248,7 +248,7 @@ export async function GET() {
           resultsPublished: e.resultsPublished,
           questionIds: e.examQuestions.map((eq) => eq.questionId),
           enrolledCandidateIds: e.enrollments.map((en) => en.candidateId),
-          attemptCount: e.attempts.length,
+          attemptCount: e._count.attempts,
         };
       });
     }
