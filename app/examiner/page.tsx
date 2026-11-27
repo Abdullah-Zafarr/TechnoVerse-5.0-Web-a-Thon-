@@ -245,6 +245,10 @@ export default function ExaminerPage() {
   const [monitorAttempts, setMonitorAttempts] = useState<MonitorAttempt[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
   const [annMessage, setAnnMessage] = useState("");
+  const [graceTargetId, setGraceTargetId] = useState<string | null>(null);
+  const [graceMinutes, setGraceMinutes] = useState("5");
+  const [graceReason, setGraceReason] = useState("");
+  const [graceSubmitting, setGraceSubmitting] = useState(false);
 
   // Grading & Analytics
   const [gradeExamId, setGradeExamId] = useState("");
@@ -605,6 +609,60 @@ export default function ExaminerPage() {
     });
     setAnnMessage("");
     await loadMonitor();
+  }
+
+  async function handleGrantOutageGrace(
+    e: React.FormEvent,
+    att: MonitorAttempt
+  ) {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+    const mins = Number(graceMinutes);
+    if (!Number.isInteger(mins) || mins < 1 || mins > 30) {
+      setError("Grace duration must be a whole number between 1 and 30 minutes.");
+      return;
+    }
+    if (graceReason.trim().length < 5) {
+      setError("Enter a verification reason of at least 5 characters.");
+      return;
+    }
+
+    setGraceSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/attempts/${encodeURIComponent(att.id)}/grace`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            graceMinutes: mins,
+            reason: graceReason.trim(),
+          }),
+        }
+      );
+      const data = (await res.json()) as {
+        error?: string;
+        resumed?: boolean;
+        attempt?: { serverExpiresAt: string };
+      };
+      if (!res.ok) {
+        setError(data.error ?? "Unable to grant outage grace.");
+        return;
+      }
+      setNotice(
+        data.resumed
+          ? `Granted +${mins} min outage grace and resumed attempt for ${att.candidateName}.`
+          : `Extended deadline by +${mins} min for ${att.candidateName}.`
+      );
+      setGraceTargetId(null);
+      setGraceReason("");
+      await loadMonitor();
+    } catch {
+      setError("Network error while granting outage grace.");
+    } finally {
+      setGraceSubmitting(false);
+    }
   }
 
   async function handleGradeWritten(
@@ -1780,8 +1838,119 @@ export default function ExaminerPage() {
                                     </span>
                                   </p>
                                 )}
+                                {att.serverExpiresAt && (
+                                  <p className="mt-0.5 text-[#64748B]">
+                                    Deadline{" "}
+                                    <span className="font-mono tabular-nums text-[#0F172A]">
+                                      {new Date(
+                                        att.serverExpiresAt
+                                      ).toLocaleTimeString()}
+                                    </span>
+                                  </p>
+                                )}
                               </div>
                             </div>
+
+                            {att.status !== "submitted" && (
+                              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[rgba(15,23,42,0.08)] pt-3">
+                                <span className="text-xs text-[#475569]">
+                                  {att.status === "expired"
+                                    ? "Auto-expired at server deadline"
+                                    : "Active attempt"}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (graceTargetId === att.id) {
+                                      setGraceTargetId(null);
+                                    } else {
+                                      setGraceTargetId(att.id);
+                                      setGraceMinutes("5");
+                                      setGraceReason("");
+                                    }
+                                  }}
+                                  className="inline-flex min-h-[40px] cursor-pointer items-center rounded-lg border border-[#1D4ED8]/35 bg-[#EFF6FF] px-3 py-1.5 text-xs font-medium text-[#1D4ED8] transition-colors hover:bg-[#DBEAFE]"
+                                >
+                                  {att.status === "expired"
+                                    ? "Grant outage grace and resume"
+                                    : "Grant outage grace"}
+                                </button>
+                              </div>
+                            )}
+
+                            {graceTargetId === att.id && (
+                              <form
+                                onSubmit={(e) => handleGrantOutageGrace(e, att)}
+                                className="mt-3 space-y-2.5 rounded-lg border border-[#1D4ED8]/25 bg-white p-3"
+                              >
+                                <p className="text-xs font-semibold text-[#0F172A]">
+                                  Verified outage grace
+                                </p>
+                                <div className="grid gap-2 sm:grid-cols-4">
+                                  <div>
+                                    <label
+                                      htmlFor={`grace-mins-${att.id}`}
+                                      className="block text-xs text-[#475569]"
+                                    >
+                                      Minutes (1 to 30)
+                                    </label>
+                                    <input
+                                      id={`grace-mins-${att.id}`}
+                                      type="number"
+                                      min={1}
+                                      max={30}
+                                      required
+                                      value={graceMinutes}
+                                      onChange={(e) =>
+                                        setGraceMinutes(e.target.value)
+                                      }
+                                      className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] px-2.5 py-1.5 font-mono text-xs tabular-nums"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-3">
+                                    <label
+                                      htmlFor={`grace-reason-${att.id}`}
+                                      className="block text-xs text-[#475569]"
+                                    >
+                                      Verified outage reason
+                                    </label>
+                                    <input
+                                      id={`grace-reason-${att.id}`}
+                                      type="text"
+                                      required
+                                      minLength={5}
+                                      maxLength={240}
+                                      placeholder="Campus Wi-Fi drop verified in Lab 2"
+                                      value={graceReason}
+                                      onChange={(e) =>
+                                        setGraceReason(e.target.value)
+                                      }
+                                      className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] px-2.5 py-1.5 text-xs"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setGraceTargetId(null)}
+                                    className="min-h-[40px] cursor-pointer rounded-lg border border-[rgba(15,23,42,0.14)] px-3 py-1.5 text-xs font-medium text-[#0F172A] hover:bg-[#EEF2F6]"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    disabled={graceSubmitting}
+                                    className="min-h-[40px] cursor-pointer rounded-lg bg-[#1D4ED8] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1E40AF] disabled:opacity-60"
+                                  >
+                                    {graceSubmitting
+                                      ? "Applying..."
+                                      : att.status === "expired"
+                                        ? "Confirm grace and resume"
+                                        : "Confirm deadline extension"}
+                                  </button>
+                                </div>
+                              </form>
+                            )}
 
                             {att.incidents.length > 0 && (
                               <div className="mt-3 border-t border-[rgba(15,23,42,0.08)] pt-2">
