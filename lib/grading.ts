@@ -18,23 +18,83 @@ function shuffleArray<T>(input: T[]): T[] {
   return arr;
 }
 
+function selectStratifiedQuestions(
+  questions: Question[],
+  limit: number
+): Question[] {
+  const difficulties: Array<Question["difficulty"]> = ["easy", "medium", "hard"];
+  const pools: Record<Question["difficulty"], Question[]> = {
+    easy: shuffleArray(questions.filter((q) => q.difficulty === "easy")),
+    medium: shuffleArray(questions.filter((q) => q.difficulty === "medium")),
+    hard: shuffleArray(questions.filter((q) => q.difficulty === "hard")),
+  };
+
+  const total = questions.length;
+  const counts: Record<Question["difficulty"], number> = {
+    easy: 0,
+    medium: 0,
+    hard: 0,
+  };
+  const remainders: Array<{ diff: Question["difficulty"]; rem: number }> = [];
+
+  let assigned = 0;
+  for (const diff of difficulties) {
+    const exact = (pools[diff].length / total) * limit;
+    const base = Math.min(pools[diff].length, Math.floor(exact));
+    counts[diff] = base;
+    assigned += base;
+    remainders.push({ diff, rem: exact - base });
+  }
+
+  // Distribute leftover slots by largest fractional remainder so every paper
+  // matches the pool's difficulty proportions as closely as possible.
+  remainders.sort((a, b) => b.rem - a.rem);
+  while (assigned < limit) {
+    let progressed = false;
+    for (const entry of remainders) {
+      if (assigned >= limit) break;
+      if (counts[entry.diff] < pools[entry.diff].length) {
+        counts[entry.diff]++;
+        assigned++;
+        progressed = true;
+      }
+    }
+    if (!progressed) break;
+  }
+
+  const chosen = difficulties.flatMap((diff) =>
+    pools[diff].slice(0, counts[diff])
+  );
+  return shuffleArray(chosen);
+}
+
 export function buildAttemptSnapshots(
   questions: Question[],
   options: {
     questionsPerPaper?: number | null;
     randomizeQuestions: boolean;
     randomizeOptions: boolean;
+    balancedRandomization?: boolean;
   }
 ): AttemptItemSnapshot[] {
-  const ordered = options.randomizeQuestions
-    ? shuffleArray(questions)
-    : [...questions];
   const limit =
     options.questionsPerPaper && options.questionsPerPaper > 0
-      ? Math.min(options.questionsPerPaper, ordered.length)
-      : ordered.length;
+      ? Math.min(options.questionsPerPaper, questions.length)
+      : questions.length;
 
-  return ordered.slice(0, limit).map((q, idx) => {
+  let selected: Question[];
+  if (!options.randomizeQuestions) {
+    selected = questions.slice(0, limit);
+  } else if (
+    limit < questions.length &&
+    options.balancedRandomization !== false
+  ) {
+    selected = selectStratifiedQuestions(questions, limit);
+  } else {
+    selected = shuffleArray(questions).slice(0, limit);
+  }
+
+  return selected.map((q, idx) => {
     const parsedOptions = Array.isArray(q.options)
       ? (q.options as unknown as QuestionOption[])
       : [];
