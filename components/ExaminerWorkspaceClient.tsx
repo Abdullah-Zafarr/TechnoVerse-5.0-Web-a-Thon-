@@ -254,9 +254,7 @@ export default function ExaminerWorkspaceClient({
     initialLoaded ? initialCandidates : []
   );
 
-  // Collapsible form panels (hidden until toggled)
-  const [showCreateExamForm, setShowCreateExamForm] = useState(false);
-  const [showQuestionForm, setShowQuestionForm] = useState(false);
+  const [visibleExamsCount, setVisibleExamsCount] = useState(3);
 
   // Create exam form
   const [examCode, setExamCode] = useState("CS-399");
@@ -589,7 +587,6 @@ export default function ExaminerWorkspaceClient({
   }
 
   function startEditQuestion(q: ExaminerQuestion) {
-    setShowQuestionForm(true);
     setEditingQId(q.id);
     setQTitle(q.title);
     setQPrompt(q.prompt);
@@ -974,32 +971,10 @@ export default function ExaminerWorkspaceClient({
             {tab === "exams" && (
               <div className="grid items-start gap-6 xl:grid-cols-12">
                 <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 sm:p-6 xl:col-span-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
-                      <Plus className="h-4 w-4 text-[#1D4ED8]" aria-hidden="true" />
-                      <h2>Create examination</h2>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowCreateExamForm((prev) => !prev)}
-                      aria-expanded={showCreateExamForm}
-                      aria-controls="create-exam-form"
-                      aria-label={
-                        showCreateExamForm
-                          ? "Hide create examination form"
-                          : "Show create examination form"
-                      }
-                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
-                    >
-                      <ChevronDown
-                        className={`h-4 w-4 transition-transform duration-200 ${
-                          showCreateExamForm ? "rotate-180" : ""
-                        }`}
-                        aria-hidden="true"
-                      />
-                    </button>
+                  <div className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
+                    <Plus className="h-4 w-4 text-[#1D4ED8]" aria-hidden="true" />
+                    <h2>Create examination</h2>
                   </div>
-                  {showCreateExamForm && (
                   <form
                     id="create-exam-form"
                     onSubmit={handleCreateExam}
@@ -1289,7 +1264,6 @@ export default function ExaminerWorkspaceClient({
                       Create draft exam
                     </button>
                   </form>
-                  )}
                 </section>
 
                 <section className="space-y-4 xl:col-span-7">
@@ -1299,7 +1273,8 @@ export default function ExaminerWorkspaceClient({
                       left to begin.
                     </div>
                   ) : (
-                    exams.map((exam) => (
+                    <>
+                    {exams.slice(0, visibleExamsCount).map((exam) => (
                       <article
                         key={exam.id}
                         className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-5"
@@ -1451,7 +1426,20 @@ export default function ExaminerWorkspaceClient({
                           </button>
                         </div>
                       </article>
-                    ))
+                    ))}
+                    {visibleExamsCount < exams.length && (
+                      <button
+                        type="button"
+                        onClick={() => setVisibleExamsCount((prev) => prev + 3)}
+                        className="inline-flex min-h-[40px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[rgba(15,23,42,0.14)] bg-white px-4 py-2 text-xs font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                      >
+                        <span>
+                          Load more ({exams.length - visibleExamsCount} remaining)
+                        </span>
+                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    )}
+                    </>
                   )}
                 </section>
               </div>
@@ -1464,44 +1452,21 @@ export default function ExaminerWorkspaceClient({
                     <h2 className="text-base font-semibold text-[#0F172A]">
                       {editingQId ? "Edit question" : "Add question to bank"}
                     </h2>
-                    <div className="flex items-center gap-2">
-                      {editingQId && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingQId(null);
-                            setQTitle("");
-                            setQPrompt("");
-                            setQRubric("");
-                          }}
-                          className="cursor-pointer text-xs font-medium text-[#1D4ED8] underline"
-                        >
-                          Cancel edit
-                        </button>
-                      )}
+                    {editingQId && (
                       <button
                         type="button"
-                        onClick={() => setShowQuestionForm((prev) => !prev)}
-                        aria-expanded={showQuestionForm}
-                        aria-controls="question-bank-form"
-                        aria-label={
-                          showQuestionForm
-                            ? "Hide question bank form"
-                            : "Show question bank form"
-                        }
-                        className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                        onClick={() => {
+                          setEditingQId(null);
+                          setQTitle("");
+                          setQPrompt("");
+                          setQRubric("");
+                        }}
+                        className="cursor-pointer text-xs font-medium text-[#1D4ED8] underline"
                       >
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform duration-200 ${
-                            showQuestionForm ? "rotate-180" : ""
-                          }`}
-                          aria-hidden="true"
-                        />
+                        Cancel edit
                       </button>
-                    </div>
+                    )}
                   </div>
-                  {showQuestionForm && (
-                  <>
                   <p className="mt-1 text-xs text-[#64748B]">
                     Bank edits apply to future papers. Active attempt snapshots
                     remain locked.
@@ -1685,8 +1650,6 @@ export default function ExaminerWorkspaceClient({
                       {editingQId ? "Update question" : "Save question"}
                     </button>
                   </form>
-                  </>
-                  )}
                 </section>
 
                 <section className="space-y-3 xl:col-span-7">
