@@ -400,6 +400,25 @@ test("importParser: handles CSV BOM, blank optional cells, written rows, and mal
   assert.match(allErrors[0], /CSV line 3/i);
 });
 
+test("importParser: supports question aliases, option1..option4 columns, mcq alias, and letter answers", () => {
+  const csv = [
+    "question,type,option1,option2,option3,answer",
+    "Which protocol is stateless?,mcq,HTTP,TCP,SSH,A",
+  ].join("\n");
+
+  const parsed = parseImportRows("csv", csv, "questions");
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  const res = validateQuestionRows(parsed.rows, parsed.badRowIndices);
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(res.errors.length, 0);
+  assert.equal(res.validQuestions.length, 1);
+  assert.equal(res.validQuestions[0].title, "Which protocol is stateless?");
+  assert.equal(res.validQuestions[0].type, "single_mcq");
+  assert.deepEqual(res.validQuestions[0].correctOptionIds, ["o1"]);
+});
+
 test("importParser: handles JSON option objects, correctOptionIds, wrapped arrays, and candidate aliases", () => {
   const jsonQuestions = JSON.stringify({
     questions: [

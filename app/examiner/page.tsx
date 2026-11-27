@@ -1928,6 +1928,11 @@ export default function ExaminerPage() {
                     >
                       Upload CSV/JSON file or paste content
                     </label>
+                    <p className="mt-1 text-xs text-[#475569]">
+                      {importKind === "questions"
+                        ? "CSV columns: title (optional if question/prompt given), prompt, type (single_mcq | multi_select | written), topic, difficulty, marks, options (A|B|C or option1..option4), correct (1-based index or A-E)."
+                        : "CSV columns: name (or full_name), email (or email_address)."}
+                    </p>
                     <input
                       id="imp-file"
                       type="file"

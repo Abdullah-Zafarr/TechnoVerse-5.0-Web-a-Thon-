@@ -116,8 +116,8 @@ export function parseImportRows(
   });
 
   for (const err of csv.errors) {
-    if (err.code === "TooFewFields") {
-      // Allow omitted trailing optional columns; required fields are validated per row.
+    if (err.code === "TooFewFields" || err.code === "UndetectableDelimiter") {
+      // Allow omitted trailing optional columns or single-column/default-comma inputs.
       continue;
     }
     if (typeof err.row === "number") {
@@ -138,7 +138,7 @@ export function parseImportRows(
   return { ok: true, rows: csv.data, badRowIndices, errors };
 }
 
-function parseOptionsField(raw: unknown): QuestionOption[] {
+function parseOptionsField(raw: unknown, row?: RawRecord): QuestionOption[] {
   if (Array.isArray(raw)) {
     const out: QuestionOption[] = [];
     for (let i = 0; i < raw.length; i++) {
@@ -158,11 +158,53 @@ function parseOptionsField(raw: unknown): QuestionOption[] {
     return out;
   }
 
-  return asTrimmedString(raw)
+  const pipeOptions = asTrimmedString(raw)
     .split("|")
     .map((s) => s.trim())
     .filter(Boolean)
     .map((text, idx) => ({ id: `o${idx + 1}`, text }));
+
+  if (pipeOptions.length > 0 || !row) {
+    return pipeOptions;
+  }
+
+  const columnGroups = [
+    ["option1", "option_1", "optiona", "a"],
+    ["option2", "option_2", "optionb", "b"],
+    ["option3", "option_3", "optionc", "c"],
+    ["option4", "option_4", "optiond", "d"],
+    ["option5", "option_5", "optione", "e"],
+  ];
+  const fromColumns: QuestionOption[] = [];
+  for (const aliases of columnGroups) {
+    for (const key of aliases) {
+      const text = asTrimmedString(row[key]);
+      if (text) {
+        fromColumns.push({ id: `o${fromColumns.length + 1}`, text });
+        break;
+      }
+    }
+  }
+  return fromColumns;
+}
+
+function normalizeQuestionType(raw: unknown): string {
+  const value = asTrimmedString(raw).toLowerCase();
+  if (!value) return "single_mcq";
+  if (["mcq", "single", "single_choice", "single-choice"].includes(value)) {
+    return "single_mcq";
+  }
+  if (
+    ["multi", "multiple", "multiple_select", "multiple-select", "checkbox"].includes(
+      value
+    )
+  ) {
+    return "multi_select";
+  }
+  if (["essay", "short_answer", "short-answer", "open", "subjective"].includes(value)) {
+    return "written";
+  }
+  return value;
 }
 
 function parseCorrectTokens(raw: unknown): string[] {
@@ -206,10 +248,17 @@ export function validateQuestionRows(
       continue;
     }
 
-    const title = asTrimmedString(row.title);
-    const prompt = asTrimmedString(row.prompt ?? row.question);
-    const type = (asTrimmedString(row.type).toLowerCase() ||
-      "single_mcq") as QuestionType;
+    const prompt = asTrimmedString(
+      row.prompt ??
+        row.question ??
+        row.question_text ??
+        row.questiontext ??
+        row.text ??
+        row.statement
+    );
+    const rawTitle = asTrimmedString(row.title ?? row.name ?? row.code);
+    const title = rawTitle || (prompt ? prompt.slice(0, 60).trim() : "");
+    const type = normalizeQuestionType(row.type) as QuestionType;
     const topic = asTrimmedString(row.topic) || "Imported";
     const difficulty = (asTrimmedString(row.difficulty).toLowerCase() ||
       "medium") as Difficulty;
@@ -234,9 +283,15 @@ export function validateQuestionRows(
       continue;
     }
 
-    const options = parseOptionsField(row.options);
+    const options = parseOptionsField(row.options, row);
     const rawCorrect = parseCorrectTokens(
-      row.correct ?? row.correctoptionids ?? row.correct_option_ids
+      row.correct ??
+        row.correctoptionids ??
+        row.correct_option_ids ??
+        row.correct_option ??
+        row.correct_answer ??
+        row.answer ??
+        row.ans
     );
 
     if (
@@ -280,6 +335,13 @@ export function validateQuestionRows(
           mappedCorrect.push(options[numeric - 1].id);
         } else if (optionIds.has(token)) {
           mappedCorrect.push(token);
+        } else if (/^[A-Ea-e]$/.test(token)) {
+          const letterIdx = token.toUpperCase().charCodeAt(0) - 65;
+          if (letterIdx < 0 || letterIdx >= options.length) {
+            hasInvalidIndex = true;
+            break;
+          }
+          mappedCorrect.push(options[letterIdx].id);
         } else {
           hasInvalidIndex = true;
           break;

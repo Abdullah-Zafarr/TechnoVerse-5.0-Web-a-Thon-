@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, ShieldAlert, QrCode } from "lucide-react";
+import { LoginGlobe } from "@/components/LoginGlobe";
 import type { SafeUser } from "@/lib/types";
 import {
   fetchSessionUser,
@@ -115,10 +116,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#071947]">
+    <div className="relative flex h-dvh max-h-dvh flex-col overflow-hidden bg-[#071947]">
+      <LoginGlobe />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
+        className="pointer-events-none absolute inset-0 opacity-[0.06]"
         style={{
           backgroundImage:
             "linear-gradient(to right, #93C5FD 1px, transparent 1px), linear-gradient(to bottom, #93C5FD 1px, transparent 1px)",
@@ -129,160 +131,161 @@ export default function LoginPage() {
         }}
       />
 
-      <div className="relative z-10 flex justify-end px-4 pt-4 sm:px-6">
+      <header className="relative z-10 mx-auto flex w-full max-w-5xl shrink-0 items-center justify-between px-4 pt-4 sm:px-6">
+        <a
+          href="/"
+          className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          <span>Back to home</span>
+        </a>
         <Link
           href="/verify"
-          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[#CBD5E1] transition-colors hover:bg-white/10 hover:text-white"
+          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-[#CBD5E1] backdrop-blur-sm transition-colors hover:bg-white/10 hover:text-white"
         >
           <QrCode className="h-4 w-4" aria-hidden="true" />
           <span>Verify report</span>
         </Link>
-      </div>
+      </header>
 
       <main
         id="main-content"
-        className="relative z-10 mx-auto flex max-w-xl flex-col px-4 pt-4 pb-10 sm:px-6 lg:pt-6"
+        className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 items-center px-4 py-4 sm:px-6"
       >
-        <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Sign in to <span className="text-[#38BDF8]">ExamGuard</span>
-            </h1>
-            <p className="mt-1.5 text-base text-[#CBD5E1]">
-              Use your account credentials or launch a role workspace directly.
-            </p>
-          </div>
-          <a
-            href="/"
-            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/20"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            <span>Back to home</span>
-          </a>
-        </div>
-
-        {user && (
-          <div className="mb-7 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#38BDF8]/30 bg-white/10 p-5 backdrop-blur-sm">
+        <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-12 lg:items-center lg:gap-10">
+          <div className="space-y-4 lg:col-span-6">
             <div>
-              <p className="text-base font-medium text-white">
-                Active session: {user.name} ({user.role})
-              </p>
-              <p className="text-sm text-[#CBD5E1]">
-                Continue to your workspace or sign in as another role below
+              <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                Sign in to <span className="text-[#38BDF8]">ExamGuard</span>
+              </h1>
+              <p className="mt-1.5 text-base text-[#CBD5E1]">
+                Use your account credentials or launch a role workspace directly.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => routeForUser(user)}
-              className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-lg bg-[#2563EB] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1D4ED8]"
-            >
-              <span>Open workspace</span>
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-        )}
 
-        <div className="rounded-2xl border border-white/15 bg-white/[0.08] p-7 backdrop-blur-md sm:p-8">
-          <h2 className="text-lg font-semibold text-white">
-            Sign in with credentials
-          </h2>
-          <p className="mt-1 text-sm text-[#CBD5E1]">
-            Demo password{" "}
-            <code className="rounded-md bg-white/15 px-2 py-0.5 font-mono text-xs text-white">
-              demo1234
-            </code>
-          </p>
-
-          {error && (
-            <div
-              role="alert"
-              className="mt-4 flex items-center gap-2 rounded-lg border border-[#FCA5A5]/40 bg-[#7F1D1D]/60 p-3.5 text-sm text-[#FEE2E2]"
-            >
-              <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="mt-5 space-y-4" noValidate>
-            <div>
-              <label
-                htmlFor="login-email"
-                className="block text-sm font-medium text-[#E2E8F0]"
-              >
-                Email address
-              </label>
-              <input
-                id="login-email"
-                type="email"
-                required
-                value={email}
-                onBlur={() => validateEmailField(email)}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (emailError) validateEmailField(e.target.value);
-                }}
-                className="mt-1.5 min-h-[46px] w-full rounded-lg border border-white/20 bg-white px-3.5 py-2.5 text-base text-[#0F172A] focus:border-[#38BDF8] focus:outline-none"
-              />
-              {emailError && (
-                <p className="mt-1 text-xs text-[#FCA5A5]">{emailError}</p>
-              )}
-            </div>
-            <div>
-              <label
-                htmlFor="login-password"
-                className="block text-sm font-medium text-[#E2E8F0]"
-              >
-                Password
-              </label>
-              <input
-                id="login-password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1.5 min-h-[46px] w-full rounded-lg border border-white/20 bg-white px-3.5 py-2.5 text-base text-[#0F172A] focus:border-[#38BDF8] focus:outline-none"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="min-h-[46px] w-full cursor-pointer rounded-lg bg-[#2563EB] px-4 py-2.5 text-base font-medium text-white transition-colors hover:bg-[#1D4ED8] disabled:opacity-60"
-            >
-              {loading ? "Signing in..." : "Sign in"}
-            </button>
-          </form>
-
-          <div className="my-6 flex items-center gap-3">
-            <div className="h-px flex-1 bg-white/15" />
-            <span className="text-xs font-medium uppercase tracking-wider text-[#CBD5E1]">
-              Quick role access
-            </span>
-            <div className="h-px flex-1 bg-white/15" />
-          </div>
-
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            {DEMO_ACCOUNTS.map((acc) => (
-              <button
-                key={acc.email}
-                type="button"
-                disabled={loading}
-                onClick={() => handleDemoSignIn(acc.email, acc.route)}
-                className="group flex min-h-[52px] w-full cursor-pointer items-center justify-between gap-2.5 rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-2.5 text-left transition-colors hover:border-[#38BDF8]/60 hover:bg-white/[0.12] disabled:opacity-60"
-              >
+            {user && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#38BDF8]/30 bg-[#0A1F56]/75 p-4 backdrop-blur-md">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">
-                    {acc.role}
+                  <p className="truncate text-sm font-medium text-white sm:text-base">
+                    Active session: {user.name} ({user.role})
                   </p>
-                  <p className="truncate text-xs text-[#CBD5E1]">
-                    {acc.email}
+                  <p className="text-xs text-[#CBD5E1] sm:text-sm">
+                    Continue to your workspace or switch role below
                   </p>
                 </div>
-                <ArrowRight
-                  className="h-4 w-4 shrink-0 text-[#38BDF8] transition-transform group-hover:translate-x-0.5"
-                  aria-hidden="true"
-                />
-              </button>
-            ))}
+                <button
+                  type="button"
+                  onClick={() => routeForUser(user)}
+                  className="inline-flex min-h-[44px] shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1D4ED8]"
+                >
+                  <span>Open workspace</span>
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-white/15 bg-[#0A1F56]/65 p-4 backdrop-blur-md">
+              <p className="mb-3 text-sm font-medium text-[#E2E8F0]">
+                Quick role access
+              </p>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {DEMO_ACCOUNTS.map((acc) => (
+                  <button
+                    key={acc.email}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleDemoSignIn(acc.email, acc.route)}
+                    className="group flex min-h-[52px] w-full cursor-pointer items-center justify-between gap-2.5 rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-2.5 text-left transition-colors hover:border-[#38BDF8]/60 hover:bg-white/[0.12] disabled:opacity-60"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-white">
+                        {acc.role}
+                      </p>
+                      <p className="truncate text-xs text-[#CBD5E1]">
+                        {acc.email}
+                      </p>
+                    </div>
+                    <ArrowRight
+                      className="h-4 w-4 shrink-0 text-[#38BDF8] transition-transform group-hover:translate-x-0.5"
+                      aria-hidden="true"
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-6">
+            <div className="rounded-2xl border border-white/15 bg-[#0A1F56]/80 p-6 backdrop-blur-md sm:p-7">
+              <h2 className="text-lg font-semibold text-white">
+                Sign in with credentials
+              </h2>
+              <p className="mt-1 text-sm text-[#CBD5E1]">
+                Demo password{" "}
+                <code className="rounded-md bg-white/15 px-2 py-0.5 font-mono text-xs text-white">
+                  demo1234
+                </code>
+              </p>
+
+              {error && (
+                <div
+                  role="alert"
+                  className="mt-3.5 flex items-center gap-2 rounded-lg border border-[#FCA5A5]/40 bg-[#7F1D1D]/60 p-3 text-sm text-[#FEE2E2]"
+                >
+                  <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="mt-4 space-y-3.5" noValidate>
+                <div>
+                  <label
+                    htmlFor="login-email"
+                    className="block text-sm font-medium text-[#E2E8F0]"
+                  >
+                    Email address
+                  </label>
+                  <input
+                    id="login-email"
+                    type="email"
+                    required
+                    value={email}
+                    onBlur={() => validateEmailField(email)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) validateEmailField(e.target.value);
+                    }}
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-white/20 bg-white px-3.5 py-2 text-base text-[#0F172A] focus:border-[#38BDF8] focus:outline-none"
+                  />
+                  {emailError && (
+                    <p className="mt-1 text-xs text-[#FCA5A5]">{emailError}</p>
+                  )}
+                </div>
+                <div>
+                  <label
+                    htmlFor="login-password"
+                    className="block text-sm font-medium text-[#E2E8F0]"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="login-password"
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-white/20 bg-white px-3.5 py-2 text-base text-[#0F172A] focus:border-[#38BDF8] focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="min-h-[46px] w-full cursor-pointer rounded-lg bg-[#2563EB] px-4 py-2.5 text-base font-medium text-white transition-colors hover:bg-[#1D4ED8] disabled:opacity-60"
+                >
+                  {loading ? "Signing in..." : "Sign in"}
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </main>
