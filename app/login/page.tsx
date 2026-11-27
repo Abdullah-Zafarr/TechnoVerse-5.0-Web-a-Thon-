@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ShieldAlert, ShieldCheck, QrCode } from "lucide-react";
+import { ArrowLeft, ArrowRight, ShieldAlert, QrCode } from "lucide-react";
 import type { SafeUser } from "@/lib/types";
 import {
   fetchSessionUser,
@@ -129,32 +129,19 @@ export default function LoginPage() {
         }}
       />
 
-      <header className="relative z-10 border-b border-white/10">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <Link
-            href="/portal"
-            className="inline-flex min-h-[40px] items-center gap-2 text-base font-semibold tracking-tight text-white"
-          >
-            <ShieldCheck
-              className="h-5 w-5 text-[#38BDF8]"
-              aria-hidden="true"
-            />
-            <span>ExamGuard</span>
-          </Link>
-
-          <Link
-            href="/verify"
-            className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[#CBD5E1] transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <QrCode className="h-4 w-4" aria-hidden="true" />
-            <span>Verify report</span>
-          </Link>
-        </div>
-      </header>
+      <div className="relative z-10 flex justify-end px-4 pt-4 sm:px-6">
+        <Link
+          href="/verify"
+          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[#CBD5E1] transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <QrCode className="h-4 w-4" aria-hidden="true" />
+          <span>Verify report</span>
+        </Link>
+      </div>
 
       <main
         id="main-content"
-        className="relative z-10 mx-auto flex min-h-[calc(100vh-73px)] max-w-6xl flex-col justify-center px-4 py-8 sm:px-6 lg:py-10"
+        className="relative z-10 mx-auto flex max-w-6xl flex-col px-4 pt-4 pb-10 sm:px-6 lg:pt-6"
       >
         <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
           <div>
