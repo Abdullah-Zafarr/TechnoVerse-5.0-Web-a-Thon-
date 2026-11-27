@@ -28,3 +28,9 @@ document.addEventListener("click",ev=>{const b=ev.target.closest("[data-a]");if(
  case"ver":{const v=$("#vi").value.trim().toUpperCase(),s=S.subs.find(x=>x.id===v&&x.pub);$("#vr").innerHTML=s?`<div class="card" style="border-color:var(--okl);margin:0"><span class="bdg b-ok">✓ Authentic report</span><p style="margin-top:8px">Issued to <b>${s.n.split(" ").map(w=>w[0]+".").join(" ")}</b> for <b>${esc(EXs(s.ex).t)}</b>.</p><p class="mut" style="font-size:.85rem">Scores and personal details aren’t shown here.</p></div>`:`<div class="card" style="border-color:var(--badl);margin:0"><span class="bdg b-bad">No match</span><p style="margin-top:8px">That ID doesn’t correspond to an issued report.</p></div>`;break}
  }});
 function review(){const e=EX(),a=ATT(),un=e.qs.map((_,i)=>i).filter(i=>!answered(a,i)),fl=a.F.map((f,i)=>f?i+1:0).filter(Boolean),d=$("#dlg");d.innerHTML=`<h2>Ready to submit?</h2><p style="margin:10px 0"><b>${e.qs.length-un.length}</b> answered · <b>${un.length}</b> unanswered${un.length?` (Q${un.map(i=>i+1).join(", Q")})`:""} · <b>${fl.length}</b> marked for review.</p><p class="mut" style="font-size:.9rem">You can’t change answers after submitting.</p><div class="row" style="margin-top:14px"><button class="btn" data-a="cl">Keep working</button><button class="btn p" data-a="sub">Submit</button></div>`;d.showModal()}
+document.addEventListener("input",ev=>{const t=ev.target,k=t.dataset.in;if(!k)return;
+ if(k==="ans"){const a=ATT();a.A[a.cur]=t.value;changed();paint()}
+ else if(k==="pad"){ATT().pad=t.value;changed()}
+ else if(k==="fs"){S.prefs.fs=+t.value;document.documentElement.style.setProperty("--fs",t.value+"px");save()}
+ else if(k==="role"){S.users[t.dataset.id].r=t.value;save();toast("Role updated")}
+ else if(k==="rx"){RX=+t.value;render()}});
