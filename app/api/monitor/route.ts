@@ -4,7 +4,7 @@ import { finalizeAttemptInTx } from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import { broadcastExamEvent } from "@/lib/realtime";
 import type { AttemptItemSnapshot } from "@/lib/types";
-import { safeParseJson } from "@/lib/validation";
+import { announcementSchema, safeParseJson } from "@/lib/validation";
 
 export async function GET(req: Request) {
   const auth = await requireRole(["admin", "examiner", "candidate"]);
@@ -151,18 +151,16 @@ export async function POST(req: Request) {
   const auth = await requireRole(["admin", "examiner"]);
   if (auth.error) return auth.error;
 
-  const json = await safeParseJson<{ examId?: string; message?: string }>(req);
+  const json = await safeParseJson(req);
   if (!json.ok) return json.error;
-  const body = json.data ?? {};
-  const examId = (body.examId ?? "").trim();
-  const message = (body.message ?? "").trim();
-
-  if (!examId || !message) {
+  const parsed = announcementSchema.safeParse(json.data);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "examId and message are required" },
+      { error: parsed.error.issues[0]?.message ?? "Invalid announcement payload" },
       { status: 400 }
     );
   }
+  const { examId, message } = parsed.data;
 
   const exam = await prisma.exam.findUnique({ where: { id: examId } });
   if (!exam) {

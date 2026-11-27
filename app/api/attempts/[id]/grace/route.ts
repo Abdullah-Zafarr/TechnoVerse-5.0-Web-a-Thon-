@@ -95,7 +95,7 @@ export async function POST(
     });
 
     return saved;
-  });
+  }, { maxWait: 10_000, timeout: 15_000 });
 
   await broadcastExamEvent(attempt.examId, "attempt_grace_granted", {
     attemptId: updated.id,

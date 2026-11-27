@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -73,6 +73,7 @@ export default function CandidatePage() {
   const [exams, setExams] = useState<CandidateExamItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"available" | "upcoming" | "completed">("available");
 
   const [breakdownData, setBreakdownData] = useState<BreakdownPayload | null>(
     null
@@ -145,131 +146,217 @@ export default function CandidatePage() {
       new Date(e.windowEnd).getTime() < nowMs
   );
 
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  const closingSoon = [...available].sort(
+    (a, b) =>
+      new Date(a.windowEnd).getTime() - new Date(b.windowEnd).getTime()
+  )[0];
+  const nextUp = [...upcoming]
+    .filter((e) => new Date(e.windowStart).getTime() > nowMs)
+    .sort(
+      (a, b) =>
+        new Date(a.windowStart).getTime() - new Date(b.windowStart).getTime()
+    )[0];
+  const scored = completed.filter(
+    (e) =>
+      e.resultsPublished &&
+      e.myAttempt &&
+      e.myAttempt.totalAwardedMarks !== null &&
+      e.myAttempt.totalPossibleMarks > 0
+  );
+  const avgPct = scored.length
+    ? Math.round(
+        (scored.reduce(
+          (sum, e) =>
+            sum +
+            (e.myAttempt!.totalAwardedMarks! / e.myAttempt!.totalPossibleMarks) *
+              100,
+          0
+        ) /
+          scored.length) *
+          10
+      ) / 10
+    : null;
+  const submittedCount = exams.filter(
+    (e) => e.myAttempt && e.myAttempt.status !== "in_progress"
+  ).length;
+  const inProgress = exams.find((e) => e.myAttempt?.status === "in_progress");
+
+  const summaryCards = [
+    {
+      label: inProgress ? "Resume your exam" : "Ready for you now",
+      value: inProgress
+        ? inProgress.code
+        : `${available.length} exam${available.length === 1 ? "" : "s"}`,
+      detail: inProgress
+        ? "Attempt in progress"
+        : closingSoon
+          ? `${closingSoon.code} closes ${fmt(closingSoon.windowEnd)}`
+          : "Nothing open right now",
+    },
+    {
+      label: "Your next exam",
+      value: nextUp ? nextUp.code : "None scheduled",
+      detail: nextUp
+        ? `Opens ${fmt(nextUp.windowStart)}`
+        : "You're all caught up",
+    },
+    {
+      label: "Your results",
+      value: avgPct !== null ? `${avgPct}% avg` : "No scores yet",
+      detail:
+        avgPct !== null
+          ? `Across ${scored.length} published result${scored.length === 1 ? "" : "s"}`
+          : `${submittedCount} submitted, awaiting results`,
+    },
+  ];
+
+  const subjects: Record<string, string> = {
+    CS: "Computer Science",
+    SE: "Software Engineering",
+    DB: "Databases",
+    ENG: "English",
+  };
+  const subjectOf = (code: string) =>
+    subjects[code.split("-")[0].toUpperCase()] ?? code.split("-")[0];
+  const fmtFull = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  const tabs = [
+    { key: "available", label: "Available", items: available, empty: "No active examinations open right now." },
+    { key: "upcoming", label: "Upcoming", items: upcoming, empty: "No upcoming scheduled examinations." },
+    { key: "completed", label: "Completed", items: completed, empty: "No completed attempts recorded yet." },
+  ] as const;
+  const activeTab = tabs.find((t) => t.key === tab) ?? tabs[0];
+
   function renderExamCard(exam: CandidateExamItem) {
+    const attempt = exam.myAttempt;
+    const done = attempt && attempt.status !== "in_progress";
+    const pill = done
+      ? "Submitted"
+      : exam.canEnter
+        ? attempt ? "In progress" : "Available"
+        : new Date(exam.windowEnd).getTime() < nowMs
+          ? "Closed"
+          : "Upcoming";
+    const pillCls =
+      pill === "Available" || pill === "In progress"
+        ? "border-[#86EFAC] bg-[#ECFDF5] text-[#047857]"
+        : pill === "Upcoming"
+          ? "border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]"
+          : "border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] text-[#475569]";
+    const btn =
+      "inline-flex min-h-[44px] cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors";
     return (
       <article
         key={exam.id}
-        className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6"
+        className="flex flex-col overflow-hidden rounded-2xl border border-[rgba(15,23,42,0.08)] border-t-2 border-t-[#38BDF8] bg-white shadow-sm"
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-[#0F172A] px-2 py-0.5 font-mono text-xs font-medium text-white">
-                {exam.code}
-              </span>
-              <span className="rounded-md border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] px-2 py-0.5 text-xs font-medium capitalize text-[#0F172A]">
-                {exam.status}
-              </span>
-            </div>
-            <h3 className="mt-2 text-lg font-semibold text-[#0F172A]">
-              {exam.title}
-            </h3>
-            <p className="mt-1 max-w-[68ch] text-sm text-[#475569]">
-              {exam.instructions}
+        <div className="flex-1 p-6">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm text-[#475569]">
+              {exam.code} · {subjectOf(exam.code)}
             </p>
-            <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-[#64748B]">
-              <div>
-                <dt className="inline">Duration: </dt>
-                <dd className="inline font-mono font-medium tabular-nums text-[#0F172A]">
-                  {exam.durationMinutes} min
-                </dd>
-              </div>
-              <div>
-                <dt className="inline">Total marks: </dt>
-                <dd className="inline font-mono font-medium tabular-nums text-[#0F172A]">
-                  {exam.totalMarks}
-                </dd>
-              </div>
-              <div>
-                <dt className="inline">Questions: </dt>
-                <dd className="inline font-mono font-medium tabular-nums text-[#0F172A]">
-                  {exam.questionsPerPaper}
-                </dd>
-              </div>
-              <div>
-                <dt className="inline">Window: </dt>
-                <dd className="inline font-mono tabular-nums text-[#0F172A]">
-                  {new Date(exam.windowStart).toLocaleString()} to{" "}
-                  {new Date(exam.windowEnd).toLocaleString()}
-                </dd>
-              </div>
-            </dl>
+            <span className={`rounded-full border px-3 py-0.5 text-xs font-medium ${pillCls}`}>
+              {pill}
+            </span>
           </div>
+          <h3 className="mt-3 text-xl font-bold text-[#0F172A]">{exam.title}</h3>
+          <p className="mt-2 text-sm leading-relaxed text-[#475569]">
+            {exam.instructions}
+          </p>
+          <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl border border-[rgba(15,23,42,0.08)] bg-[#F6F8FA] px-4 py-3 text-sm text-[#475569]">
+            <span className="inline-flex items-center gap-1.5">
+              <Clock className="h-4 w-4" aria-hidden="true" />
+              {exam.durationMinutes} mins
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              {exam.questionsPerPaper} questions
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+              {exam.totalMarks} marks
+            </span>
+          </div>
+          <p className="mt-4 text-sm text-[#475569]">
+            Window: {fmtFull(exam.windowStart)} – {fmtFull(exam.windowEnd)}
+          </p>
+        </div>
 
-          <div className="flex flex-col items-end gap-2">
-            {exam.canEnter ? (
-              <Link
-                href={`/exam/${exam.id}`}
-                className="inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg bg-[#1D4ED8] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
-              >
-                <Play className="h-4 w-4" aria-hidden="true" />
-                <span>
-                  {exam.myAttempt?.status === "in_progress"
-                    ? "Resume exam"
-                    : "Start exam"}
-                </span>
-              </Link>
-            ) : exam.myAttempt && exam.myAttempt.status !== "in_progress" ? (
-              <div className="text-right">
-                <div className="inline-flex items-center gap-1.5 text-xs font-medium capitalize text-[#0F766E]">
-                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                  <span>{exam.myAttempt.status}</span>
+        <div className="border-t border-[rgba(15,23,42,0.08)] bg-[#FAFBFD] p-4">
+          {exam.canEnter ? (
+            <Link
+              href={`/exam/${exam.id}`}
+              className={`${btn} w-full bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] text-white hover:opacity-90`}
+            >
+              <Play className="h-4 w-4" aria-hidden="true" />
+              {attempt?.status === "in_progress"
+                ? "Resume Exam"
+                : "View Instructions & Enter"}
+            </Link>
+          ) : done && attempt ? (
+            exam.resultsPublished ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-[#475569]">
+                  Score{" "}
+                  <span className="font-mono text-lg font-semibold tabular-nums text-[#0F172A]">
+                    {attempt.totalAwardedMarks} / {attempt.totalPossibleMarks}
+                  </span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={breakdownLoading}
+                    onClick={() => openBreakdown(attempt.id)}
+                    className={`${btn} border border-[rgba(15,23,42,0.14)] bg-white text-[#0F172A] hover:bg-[#EEF2F6]`}
+                  >
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                    Breakdown
+                  </button>
+                  <a
+                    href={`/api/reports/${attempt.id}/pdf`}
+                    className={`${btn} border border-[rgba(15,23,42,0.14)] bg-white text-[#0F172A] hover:bg-[#EEF2F6]`}
+                  >
+                    <FileDown className="h-4 w-4" aria-hidden="true" />
+                    PDF
+                  </a>
+                  {attempt.verificationCode && (
+                    <Link
+                      href={`/verify/${attempt.verificationCode}`}
+                      className={`${btn} border border-[#1D4ED8]/30 bg-[#EFF6FF] font-mono text-[#1D4ED8] hover:bg-[#DBEAFE]`}
+                    >
+                      <QrCode className="h-4 w-4" aria-hidden="true" />
+                      {attempt.verificationCode}
+                    </Link>
+                  )}
                 </div>
-                {exam.resultsPublished ? (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-sm font-medium text-[#475569]">
-                      Score{" "}
-                      <span className="font-mono text-lg font-semibold tabular-nums text-[#0F172A]">
-                        {exam.myAttempt.totalAwardedMarks} /{" "}
-                        {exam.myAttempt.totalPossibleMarks}
-                      </span>
-                    </p>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button
-                        type="button"
-                        disabled={breakdownLoading}
-                        onClick={() => openBreakdown(exam.myAttempt!.id)}
-                        className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-3 py-2 text-xs font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
-                      >
-                        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>View breakdown</span>
-                      </button>
-                      <a
-                        href={`/api/reports/${exam.myAttempt.id}/pdf`}
-                        className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] px-3 py-2 text-xs font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
-                      >
-                        <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>Download PDF</span>
-                      </a>
-                      {exam.myAttempt.verificationCode && (
-                        <Link
-                          href={`/verify/${exam.myAttempt.verificationCode}`}
-                          className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-[#1D4ED8]/30 bg-[#EFF6FF] px-3 py-2 font-mono text-xs font-medium text-[#1D4ED8] transition-colors hover:bg-[#DBEAFE]"
-                        >
-                          <QrCode className="h-3.5 w-3.5" aria-hidden="true" />
-                          <span>{exam.myAttempt.verificationCode}</span>
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="mt-1 flex items-center justify-end gap-1 text-xs text-[#64748B]">
-                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>Awaiting examiner publication</span>
-                  </p>
-                )}
               </div>
             ) : (
-              <span className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] px-3 py-2 text-xs font-medium text-[#64748B]">
-                <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>
-                  {new Date(exam.windowEnd).getTime() < nowMs
-                    ? "Window closed (no attempt)"
-                    : "Unavailable outside exam window"}
-                </span>
-              </span>
-            )}
-          </div>
+              <p className="flex min-h-[44px] items-center justify-center gap-2 text-sm text-[#64748B]">
+                <Clock className="h-4 w-4" aria-hidden="true" />
+                Submitted · awaiting examiner publication
+              </p>
+            )
+          ) : (
+            <p className="flex min-h-[44px] items-center justify-center gap-2 text-sm text-[#64748B]">
+              <Lock className="h-4 w-4" aria-hidden="true" />
+              {new Date(exam.windowEnd).getTime() < nowMs
+                ? "Window closed (no attempt)"
+                : `Opens ${fmtFull(exam.windowStart)}`}
+            </p>
+          )}
         </div>
       </article>
     );
@@ -283,22 +370,64 @@ export default function CandidatePage() {
         id="main-content"
         className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6"
       >
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-[#1D4ED8]">
-              Candidate workspace
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#0F172A]">
-              Examinations and published results
-            </h1>
+        <section
+          aria-label="Candidate welcome"
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1E3A8A] via-[#1D4ED8] to-[#38BDF8] p-6 text-white sm:p-8"
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10"
+          />
+          <div className="relative flex flex-wrap items-center justify-between gap-6">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#BFDBFE]">
+                Candidate examination dashboard
+              </p>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+                Welcome back{user ? `, ${user.name}` : ""}
+              </h1>
+              <p className="mt-2 text-sm text-white/85">
+                {user ? (
+                  <>
+                    <span>{user.email}</span>
+                    <span aria-hidden="true"> Â· </span>
+                    <span>
+                      Member since{" "}
+                      {new Date(user.createdAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </>
+                ) : (
+                  "Your examinations and published results"
+                )}
+              </p>
+              <Link
+                href="/"
+                className="mt-4 inline-flex min-h-[36px] cursor-pointer items-center rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
+              >
+                Switch account
+              </Link>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {summaryCards.map((s) => (
+                <div
+                  key={s.label}
+                  className="w-[190px] rounded-xl border border-white/25 bg-white/15 px-4 py-3"
+                >
+                  <div className="text-xs text-white/80">{s.label}</div>
+                  <div className="mt-1 truncate font-mono text-xl font-bold tabular-nums">
+                    {s.value}
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-white/85">
+                    {s.detail}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <Link
-            href="/"
-            className="inline-flex min-h-[40px] cursor-pointer items-center rounded-lg border border-[rgba(15,23,42,0.12)] bg-white px-3.5 py-2 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
-          >
-            Switch account
-          </Link>
-        </div>
+        </section>
 
         {error && (
           <div
@@ -317,59 +446,73 @@ export default function CandidatePage() {
         )}
 
         {!loading && !error && (
-          <div className="mt-6 space-y-8">
-            <section>
-              <h2 className="text-base font-semibold text-[#0F172A]">
-                Available now{" "}
-                <span className="font-mono text-sm font-medium tabular-nums text-[#64748B]">
-                  ({available.length})
-                </span>
-              </h2>
-              <div className="mt-3 space-y-3">
-                {available.length === 0 ? (
-                  <p className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-5 text-sm text-[#64748B]">
-                    No active examinations open right now.
+          <div className="mt-8 space-y-10">
+            <section aria-label="Your examinations">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <h2 className="text-2xl font-bold tracking-tight text-[#0F172A]">
+                  Your Examinations
+                </h2>
+                <div role="tablist" className="inline-flex gap-1 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white/80 p-1">
+                  {tabs.map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === t.key}
+                      onClick={() => setTab(t.key)}
+                      className={`min-h-[40px] cursor-pointer rounded-lg px-4 text-sm font-medium transition-colors ${
+                        tab === t.key
+                          ? "bg-white text-[#1E40AF] shadow-sm"
+                          : "text-[#475569] hover:text-[#0F172A]"
+                      }`}
+                    >
+                      {t.label} ({t.items.length})
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-5 grid gap-6 md:grid-cols-2">
+                {activeTab.items.length === 0 ? (
+                  <p className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-5 text-sm text-[#64748B] md:col-span-2">
+                    {activeTab.empty}
                   </p>
                 ) : (
-                  available.map(renderExamCard)
+                  activeTab.items.map(renderExamCard)
                 )}
               </div>
             </section>
 
-            <section>
-              <h2 className="text-base font-semibold text-[#0F172A]">
-                Upcoming{" "}
-                <span className="font-mono text-sm font-medium tabular-nums text-[#64748B]">
-                  ({upcoming.length})
-                </span>
+            <section aria-label="Recent published results">
+              <h2 className="text-2xl font-bold tracking-tight text-[#0F172A]">
+                Recent Published Results
               </h2>
-              <div className="mt-3 space-y-3">
-                {upcoming.length === 0 ? (
-                  <p className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-5 text-sm text-[#64748B]">
-                    No upcoming scheduled examinations.
-                  </p>
-                ) : (
-                  upcoming.map(renderExamCard)
-                )}
-              </div>
-            </section>
-
-            <section>
-              <h2 className="text-base font-semibold text-[#0F172A]">
-                Completed{" "}
-                <span className="font-mono text-sm font-medium tabular-nums text-[#64748B]">
-                  ({completed.length})
-                </span>
-              </h2>
-              <div className="mt-3 space-y-3">
-                {completed.length === 0 ? (
-                  <p className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-5 text-sm text-[#64748B]">
-                    No completed attempts recorded yet.
-                  </p>
-                ) : (
-                  completed.map(renderExamCard)
-                )}
-              </div>
+              {scored.length === 0 ? (
+                <p className="mt-3 text-sm text-[#64748B]">
+                  No published results yet.
+                </p>
+              ) : (
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {scored.map((e) => (
+                    <div
+                      key={e.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs text-[#64748B]">
+                          {e.code} · {subjectOf(e.code)}
+                        </p>
+                        <p className="truncate font-semibold text-[#0F172A]">
+                          {e.title}
+                        </p>
+                      </div>
+                      <span className="font-mono text-lg font-semibold tabular-nums text-[#0F172A]">
+                        {e.myAttempt!.totalAwardedMarks} /{" "}
+                        {e.myAttempt!.totalPossibleMarks}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           </div>
         )}

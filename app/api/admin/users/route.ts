@@ -71,7 +71,7 @@ export async function POST(req: Request) {
       },
     });
     return u;
-  });
+  }, { maxWait: 10_000, timeout: 15_000 });
 
   return NextResponse.json({ user: sanitizeUser(created) }, { status: 201 });
 }
@@ -129,7 +129,7 @@ export async function PATCH(req: Request) {
       },
     });
     return u;
-  });
+  }, { maxWait: 10_000, timeout: 15_000 });
 
   return NextResponse.json({ user: sanitizeUser(updated) });
 }

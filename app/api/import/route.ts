@@ -244,76 +244,79 @@ export async function POST(req: Request) {
 
     if (validQuestions.length > 0) {
       try {
-        importedCount = await prisma.$transaction(async (tx) => {
-          let nextPos = 1;
-          if (examId) {
-            const txExam = await tx.exam.findUnique({
-              where: { id: examId },
-              select: { status: true },
-            });
-            if (!txExam) {
-              throw new ImportExamConflictError("Target exam not found", 404);
-            }
-            if (txExam.status === "ongoing" || txExam.status === "completed") {
-              throw new ImportExamConflictError(
-                `Cannot import questions into an ${txExam.status} exam`,
-                409
-              );
-            }
-            const agg = await tx.examQuestion.aggregate({
-              where: { examId },
-              _max: { position: true },
-            });
-            nextPos = (agg._max.position ?? 0) + 1;
-          }
-
-          let count = 0;
-          for (const q of validQuestions) {
-            const created = await tx.question.create({
-              data: {
-                title: q.title,
-                prompt: q.prompt,
-                type: q.type,
-                topic: q.topic,
-                difficulty: q.difficulty,
-                marks: q.marks,
-                partialCredit: q.partialCredit,
-                options: q.options,
-                correctOptionIds: q.correctOptionIds,
-                rubric: q.rubric,
-                createdById: auth.user.id,
-              },
-            });
-
+        importedCount = await prisma.$transaction(
+          async (tx) => {
+            let nextPos = 1;
             if (examId) {
-              await tx.examQuestion.create({
+              const txExam = await tx.exam.findUnique({
+                where: { id: examId },
+                select: { status: true },
+              });
+              if (!txExam) {
+                throw new ImportExamConflictError("Target exam not found", 404);
+              }
+              if (txExam.status === "ongoing" || txExam.status === "completed") {
+                throw new ImportExamConflictError(
+                  `Cannot import questions into an ${txExam.status} exam`,
+                  409
+                );
+              }
+              const agg = await tx.examQuestion.aggregate({
+                where: { examId },
+                _max: { position: true },
+              });
+              nextPos = (agg._max.position ?? 0) + 1;
+            }
+
+            let count = 0;
+            for (const q of validQuestions) {
+              const created = await tx.question.create({
                 data: {
-                  examId,
-                  questionId: created.id,
-                  position: nextPos++,
+                  title: q.title,
+                  prompt: q.prompt,
+                  type: q.type,
+                  topic: q.topic,
+                  difficulty: q.difficulty,
+                  marks: q.marks,
+                  partialCredit: q.partialCredit,
+                  options: q.options,
+                  correctOptionIds: q.correctOptionIds,
+                  rubric: q.rubric,
+                  createdById: auth.user.id,
                 },
               });
+
+              if (examId) {
+                await tx.examQuestion.create({
+                  data: {
+                    examId,
+                    questionId: created.id,
+                    position: nextPos++,
+                  },
+                });
+              }
+              count++;
             }
-            count++;
-          }
 
-          if (examId) {
-            const linked = await tx.examQuestion.findMany({
-              where: { examId },
-              include: { question: { select: { marks: true } } },
-            });
-            const totalMarks = linked.reduce(
-              (s, eq) => s + eq.question.marks,
-              0
-            );
-            await tx.exam.update({
-              where: { id: examId },
-              data: { totalMarks },
-            });
-          }
+            if (examId) {
+              const linked = await tx.examQuestion.findMany({
+                where: { examId },
+                include: { question: { select: { marks: true } } },
+              });
+              const totalMarks = linked.reduce(
+                (s, eq) => s + eq.question.marks,
+                0
+              );
+              await tx.exam.update({
+                where: { id: examId },
+                data: { totalMarks },
+              });
+            }
 
-          return count;
-        });
+            return count;
+          },
+          { maxWait: 10_000, timeout: 25_000 }
+        );
       } catch (err) {
         if (err instanceof ImportExamConflictError) {
           return NextResponse.json(

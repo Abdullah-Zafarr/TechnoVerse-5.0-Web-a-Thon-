@@ -8,9 +8,15 @@ import type { Role, SafeUser } from "./types";
 const SESSION_COOKIE = "examguard_session";
 
 function getSecret(): string {
-  return (
-    process.env.AUTH_SECRET || "examguard-dev-session-secret-change-in-prod"
-  );
+  const configured = process.env.AUTH_SECRET?.trim();
+  if (configured) return configured;
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PHASE !== "phase-production-build"
+  ) {
+    throw new Error("AUTH_SECRET environment variable must be set in production");
+  }
+  return "examguard-dev-session-secret-change-in-prod";
 }
 
 export function hashPassword(password: string): string {
@@ -97,15 +103,20 @@ export async function getSessionUser(): Promise<SafeUser | null> {
   const payload = verifySessionToken(token);
   if (!payload) return null;
 
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: payload.uid },
-    });
-    if (!user || !user.active) return null;
-    return sanitizeUser(user);
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: payload.uid },
+      });
+      if (!user || !user.active) return null;
+      return sanitizeUser(user);
+    } catch {
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    }
   }
+  return null;
 }
 
 export async function requireRole(

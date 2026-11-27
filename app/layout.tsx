@@ -1,20 +1,5 @@
 import type { Metadata } from "next";
-import { Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-
-const instrumentSans = Instrument_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-sans",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-mono",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "ExamGuard: Secure Examination Management System",
@@ -28,10 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="en"
-      className={`${instrumentSans.variable} ${jetbrainsMono.variable}`}
-    >
+    <html lang="en">
       <body className="min-h-screen bg-[#F6F8FA] font-sans text-[#0F172A]">
         <a
           href="#main-content"

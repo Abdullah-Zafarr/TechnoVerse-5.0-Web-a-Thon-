@@ -11,11 +11,13 @@ import {
 import {
   buildAttemptSnapshots,
   computeExamAnalytics,
+  computeStratifiedQuotas,
   gradeObjectiveItem,
 } from "../lib/grading";
 import { sanitizePdfFilename, sanitizePdfText, wrapPdfText } from "../lib/pdf";
 import type { AttemptItemSnapshot, SafeUser } from "../lib/types";
 import {
+  announcementSchema,
   answerUpdateSchema,
   createExamSchema,
   graceGrantSchema,
@@ -331,4 +333,35 @@ test("pdf: sanitizes WinAnsi characters, wraps lines, and cleans filenames", () 
   assert.equal(sanitizePdfText("Hello \u2014 \u201Cworld\u201D\nnext"), "Hello - \"world\" next");
   assert.deepEqual(wrapPdfText("one two three four", 9), ["one two", "three", "four"]);
   assert.equal(sanitizePdfFilename("Report: CS/301?.pdf"), "Report-CS-301-.pdf");
+});
+
+test("grading & validation: stratified quotas and announcement bounds", () => {
+  const pool = [
+    { difficulty: "easy" as const },
+    { difficulty: "easy" as const },
+    { difficulty: "easy" as const },
+    { difficulty: "medium" as const },
+    { difficulty: "medium" as const },
+    { difficulty: "medium" as const },
+    { difficulty: "hard" as const },
+    { difficulty: "hard" as const },
+    { difficulty: "hard" as const },
+  ];
+  assert.deepEqual(computeStratifiedQuotas(pool, 6), {
+    easy: 2,
+    medium: 2,
+    hard: 2,
+  });
+  assert.equal(
+    announcementSchema.safeParse({ examId: "ex-1", message: "5 min left" })
+      .success,
+    true
+  );
+  assert.equal(
+    announcementSchema.safeParse({
+      examId: "ex-1",
+      message: "x".repeat(501),
+    }).success,
+    false
+  );
 });

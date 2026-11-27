@@ -195,6 +195,126 @@ async function main() {
       ],
       correctOptionIds: ["o1"],
     },
+    {
+      id: "q-7",
+      title: "HTTP-Only Session Cookies",
+      prompt:
+        "What security benefit does marking an authentication cookie as HttpOnly provide?",
+      type: "single_mcq" as const,
+      topic: "Security",
+      difficulty: "easy" as const,
+      marks: 2,
+      partialCredit: false,
+      options: [
+        {
+          id: "o1",
+          text: "Prevents client-side JavaScript from reading the session token via document.cookie.",
+        },
+        {
+          id: "o2",
+          text: "Encrypts the PostgreSQL database automatically.",
+        },
+        {
+          id: "o3",
+          text: "Prevents the browser from sending the cookie on same-origin requests.",
+        },
+        {
+          id: "o4",
+          text: "Disables server-side HMAC verification.",
+        },
+      ],
+      correctOptionIds: ["o1"],
+    },
+    {
+      id: "q-8",
+      title: "Monotonic Answer Revisions",
+      prompt:
+        "Why does an offline-resilient exam sync protocol attach an incrementing revision number to every answer update?",
+      type: "single_mcq" as const,
+      topic: "Data Integrity",
+      difficulty: "medium" as const,
+      marks: 3,
+      partialCredit: false,
+      options: [
+        {
+          id: "o1",
+          text: "So delayed or replayed network requests cannot overwrite newer answers saved on the server.",
+        },
+        {
+          id: "o2",
+          text: "To let candidates extend their own server deadline while offline.",
+        },
+        {
+          id: "o3",
+          text: "To compress written essay text in IndexedDB.",
+        },
+        {
+          id: "o4",
+          text: "To skip schema validation during auto-save.",
+        },
+      ],
+      correctOptionIds: ["o1"],
+    },
+    {
+      id: "q-9",
+      title: "Stratified Paper Fairness",
+      prompt:
+        "Select ALL properties guaranteed by stratified difficulty sampling when drawing a 6-question randomized paper from a balanced 9-question pool.",
+      type: "multi_select" as const,
+      topic: "Fairness",
+      difficulty: "hard" as const,
+      marks: 4,
+      partialCredit: true,
+      options: [
+        {
+          id: "o1",
+          text: "Each candidate receives proportional easy, medium, and hard counts.",
+        },
+        {
+          id: "o2",
+          text: "Question combinations still vary across candidates to discourage copying.",
+        },
+        {
+          id: "o3",
+          text: "Every candidate receives the exact same question sequence.",
+        },
+        {
+          id: "o4",
+          text: "Active attempts retain their drawn question snapshot if the bank later changes.",
+        },
+      ],
+      correctOptionIds: ["o1", "o2", "o4"],
+    },
+    {
+      id: "q-10",
+      title: "Outage Grace Governance",
+      prompt:
+        "Which safeguards keep outage grace extensions fair during a verified campus network drop?",
+      type: "multi_select" as const,
+      topic: "Resilience",
+      difficulty: "hard" as const,
+      marks: 4,
+      partialCredit: true,
+      options: [
+        {
+          id: "o1",
+          text: "Only authorized examiners or admins can grant bounded extensions.",
+        },
+        {
+          id: "o2",
+          text: "Each grace grant records an immutable audit log entry and incident note.",
+        },
+        {
+          id: "o3",
+          text: "Candidates can add unlimited grace minutes from localStorage.",
+        },
+        {
+          id: "o4",
+          text: "Already submitted attempts remain locked and cannot be reopened.",
+        },
+      ],
+      correctOptionIds: ["o1", "o2", "o4"],
+    },
   ];
 
   for (const q of seedQuestions) {
@@ -212,17 +332,17 @@ async function main() {
     where: { code: "CS-301" },
     update: {
       questionsPerPaper: 6,
-      totalMarks: 20,
+      totalMarks: 30,
     },
     create: {
       id: "exam-cs301",
       code: "CS-301",
       title: "CS-301: Secure Examination Systems Midterm",
       instructions:
-        "Complete all questions before the server timer expires. Answers auto-save automatically and survive page refreshes.",
+        "Complete all 6 stratified questions before the server timer expires. Answers auto-save automatically and survive page refreshes or brief network drops.",
       status: "ongoing",
       durationMinutes: 30,
-      totalMarks: 20,
+      totalMarks: 30,
       windowStart: new Date(now - 3600_000),
       windowEnd: new Date(now + 3600_000 * 8),
       questionsPerPaper: 6,
@@ -299,7 +419,10 @@ async function main() {
   });
 
   const linkPairs: [string, string[]][] = [
-    [cs301.id, ["q-1", "q-2", "q-3", "q-4", "q-5", "q-6"]],
+    [
+      cs301.id,
+      ["q-1", "q-2", "q-3", "q-4", "q-5", "q-6", "q-7", "q-9", "q-10"],
+    ],
     [se402.id, ["q-3", "q-4", "q-6"]],
     [db201.id, ["q-1", "q-4", "q-5"]],
     [eng105.id, ["q-5"]],

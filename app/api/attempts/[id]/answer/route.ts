@@ -227,7 +227,7 @@ export async function POST(
     }
 
     return { kind: "ok" as const, txNow };
-  });
+  }, { maxWait: 10_000, timeout: 20_000 });
 
   if (txResult.kind === "not_found") {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });

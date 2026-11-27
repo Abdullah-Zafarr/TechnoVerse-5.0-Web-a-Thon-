@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { canManageExam, requireRole } from "@/lib/auth";
-import { expireStaleAttempts } from "@/lib/grading";
+import { computeStratifiedQuotas, expireStaleAttempts } from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import type { ExamStatus } from "@/lib/types";
 import {
@@ -114,7 +114,10 @@ export async function GET() {
         ? undefined
         : { createdById: auth.user.id },
     include: {
-      examQuestions: { orderBy: { position: "asc" } },
+      examQuestions: {
+        orderBy: { position: "asc" },
+        include: { question: { select: { difficulty: true } } },
+      },
       enrollments: true,
       _count: { select: { attempts: true } },
     },
@@ -122,24 +125,40 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    exams: exams.map((e) => ({
-      id: e.id,
-      code: e.code,
-      title: e.title,
-      instructions: e.instructions,
-      status: e.status,
-      durationMinutes: e.durationMinutes,
-      totalMarks: e.totalMarks,
-      windowStart: e.windowStart.toISOString(),
-      windowEnd: e.windowEnd.toISOString(),
-      questionsPerPaper: e.questionsPerPaper ?? e.examQuestions.length,
-      randomizeQuestions: e.randomizeQuestions,
-      randomizeOptions: e.randomizeOptions,
-      resultsPublished: e.resultsPublished,
-      questionIds: e.examQuestions.map((eq) => eq.questionId),
-      enrolledCandidateIds: e.enrollments.map((en) => en.candidateId),
-      attemptCount: e._count.attempts,
-    })),
+    exams: exams.map((e) => {
+      const paperCount = e.questionsPerPaper ?? e.examQuestions.length;
+      const poolQuestions = e.examQuestions.map((eq) => eq.question);
+      const poolDifficultyCounts = computeStratifiedQuotas(
+        poolQuestions,
+        poolQuestions.length
+      );
+      const stratifiedQuotas = computeStratifiedQuotas(
+        poolQuestions,
+        paperCount
+      );
+      return {
+        id: e.id,
+        code: e.code,
+        title: e.title,
+        instructions: e.instructions,
+        status: e.status,
+        durationMinutes: e.durationMinutes,
+        totalMarks: e.totalMarks,
+        windowStart: e.windowStart.toISOString(),
+        windowEnd: e.windowEnd.toISOString(),
+        questionsPerPaper: paperCount,
+        randomizeQuestions: e.randomizeQuestions,
+        randomizeOptions: e.randomizeOptions,
+        stratifiedBalanced:
+          e.randomizeQuestions && paperCount < e.examQuestions.length,
+        poolDifficultyCounts,
+        stratifiedQuotas,
+        resultsPublished: e.resultsPublished,
+        questionIds: e.examQuestions.map((eq) => eq.questionId),
+        enrolledCandidateIds: e.enrollments.map((en) => en.candidateId),
+        attemptCount: e._count.attempts,
+      };
+    }),
     serverNow: now.toISOString(),
   });
 }
@@ -453,7 +472,7 @@ export async function PATCH(req: Request) {
     }
 
     return exam;
-  });
+  }, { maxWait: 10_000, timeout: 20_000 });
 
   return NextResponse.json({ exam: updated });
 }

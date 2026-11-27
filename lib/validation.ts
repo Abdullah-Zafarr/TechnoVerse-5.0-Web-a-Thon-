@@ -171,3 +171,12 @@ export const graceGrantSchema = z.object({
     .min(5, "Verification reason must be at least 5 characters")
     .max(240, "Verification reason cannot exceed 240 characters"),
 });
+
+export const announcementSchema = z.object({
+  examId: z.string().trim().min(1, "examId is required"),
+  message: z
+    .string()
+    .trim()
+    .min(1, "Announcement message is required")
+    .max(500, "Announcement message cannot exceed 500 characters"),
+});

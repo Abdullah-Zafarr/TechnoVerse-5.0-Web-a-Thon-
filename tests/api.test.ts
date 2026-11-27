@@ -1,8 +1,10 @@
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
 import { PrismaClient } from "@prisma/client";
 
+const require = createRequire(import.meta.url);
 const prisma = new PrismaClient();
 const TEST_PORT = 3099;
 const BASE_URL = process.env.TEST_BASE_URL || `http://127.0.0.1:${TEST_PORT}`;
@@ -12,7 +14,7 @@ const createdExamIds: string[] = [];
 const createdQuestionIds: string[] = [];
 const createdUserEmails: string[] = [];
 
-async function waitForServer(url: string, timeoutMs = 30_000): Promise<void> {
+async function waitForServer(url: string, timeoutMs = 45_000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -38,11 +40,12 @@ async function loginAs(email: string, password = "demo1234"): Promise<string> {
 
 before(async () => {
   if (!process.env.TEST_BASE_URL) {
-    const nextBin = process.platform === "win32" ? "npx.cmd" : "npx";
-    serverProc = spawn(nextBin, ["next", "start", "-p", String(TEST_PORT)], {
-      stdio: "ignore",
-      shell: process.platform === "win32",
-    });
+    const nextCli = require.resolve("next/dist/bin/next");
+    serverProc = spawn(
+      process.execPath,
+      [nextCli, "start", "-p", String(TEST_PORT), "-H", "127.0.0.1"],
+      { stdio: "ignore" }
+    );
     await waitForServer(BASE_URL);
   }
 });
@@ -60,8 +63,14 @@ after(async () => {
       .catch(() => {});
   }
   await prisma.$disconnect();
-  if (serverProc && !serverProc.killed) {
-    serverProc.kill("SIGTERM");
+  if (serverProc && serverProc.pid) {
+    if (process.platform === "win32") {
+      spawn("taskkill", ["/pid", String(serverProc.pid), "/t", "/f"], {
+        stdio: "ignore",
+      });
+    } else if (!serverProc.killed) {
+      serverProc.kill("SIGTERM");
+    }
   }
 });
 

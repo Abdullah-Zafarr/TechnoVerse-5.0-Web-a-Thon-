@@ -33,6 +33,12 @@ import type {
 
 type TabId = "exams" | "questions" | "import" | "monitor" | "grading";
 
+interface DifficultyCounts {
+  easy: number;
+  medium: number;
+  hard: number;
+}
+
 interface ExaminerExam {
   id: string;
   code: string;
@@ -46,6 +52,9 @@ interface ExaminerExam {
   questionsPerPaper: number;
   randomizeQuestions: boolean;
   randomizeOptions: boolean;
+  stratifiedBalanced?: boolean;
+  poolDifficultyCounts?: DifficultyCounts;
+  stratifiedQuotas?: DifficultyCounts;
   resultsPublished: boolean;
   questionIds: string[];
   enrolledCandidateIds: string[];
@@ -64,6 +73,7 @@ interface ExaminerQuestion {
   options: QuestionOption[];
   correctOptionIds: string[];
   rubric?: string | null;
+  createdById?: string;
 }
 
 interface MonitorAttempt {
@@ -163,6 +173,45 @@ function toLocalDatetimeInput(iso: string): string {
   )}:${pad(d.getMinutes())}`;
 }
 
+function previewStratifiedQuotas(
+  pool: Array<{ difficulty: Difficulty }>,
+  limit: number
+): DifficultyCounts {
+  const diffs: Difficulty[] = ["easy", "medium", "hard"];
+  const avail: DifficultyCounts = {
+    easy: pool.filter((q) => q.difficulty === "easy").length,
+    medium: pool.filter((q) => q.difficulty === "medium").length,
+    hard: pool.filter((q) => q.difficulty === "hard").length,
+  };
+  const total = pool.length;
+  const counts: DifficultyCounts = { easy: 0, medium: 0, hard: 0 };
+  if (total === 0 || limit <= 0) return counts;
+  const target = Math.min(limit, total);
+  const rems: Array<{ diff: Difficulty; rem: number }> = [];
+  let assigned = 0;
+  for (const diff of diffs) {
+    const exact = (avail[diff] / total) * target;
+    const base = Math.min(avail[diff], Math.floor(exact));
+    counts[diff] = base;
+    assigned += base;
+    rems.push({ diff, rem: exact - base });
+  }
+  rems.sort((a, b) => b.rem - a.rem);
+  while (assigned < target) {
+    let progressed = false;
+    for (const r of rems) {
+      if (assigned >= target) break;
+      if (counts[r.diff] < avail[r.diff]) {
+        counts[r.diff]++;
+        assigned++;
+        progressed = true;
+      }
+    }
+    if (!progressed) break;
+  }
+  return counts;
+}
+
 export default function ExaminerPage() {
   const [me, setMe] = useState<SafeUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -207,8 +256,10 @@ export default function ExaminerPage() {
   const [editExCandIds, setEditExCandIds] = useState<string[]>([]);
 
   // Pre-publish review modal
-  const [reviewPublishExam, setReviewPublishExam] =
-    useState<ExaminerExam | null>(null);
+  const [reviewPublishExam, setReviewPublishExam] = useState<{
+    exam: ExaminerExam;
+    targetStatus: "published" | "ongoing";
+  } | null>(null);
 
   // Question create/edit form & filters
   const [editingQId, setEditingQId] = useState<string | null>(null);
@@ -601,14 +652,31 @@ export default function ExaminerPage() {
 
   async function handleSendAnnouncement(e: React.FormEvent) {
     e.preventDefault();
-    if (!annMessage.trim() || !monitorExamId) return;
-    await fetch("/api/monitor", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ examId: monitorExamId, message: annMessage }),
-    });
-    setAnnMessage("");
-    await loadMonitor();
+    const trimmed = annMessage.trim();
+    if (!trimmed || !monitorExamId) return;
+    if (trimmed.length > 500) {
+      setError("Announcement message cannot exceed 500 characters.");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/monitor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ examId: monitorExamId, message: trimmed }),
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string };
+        setError(err.error ?? "Failed to send announcement.");
+        return;
+      }
+      setAnnMessage("");
+      setNotice("Announcement sent to enrolled candidates.");
+      await loadMonitor();
+    } catch {
+      setError("Network error while sending announcement.");
+    }
   }
 
   async function handleGrantOutageGrace(
@@ -967,14 +1035,52 @@ export default function ExaminerPage() {
                       </div>
                     </div>
 
-                    <p className="text-xs text-[#64748B]">
-                      Selected pool marks:{" "}
-                      <span className="font-mono font-medium tabular-nums text-[#0F172A]">
-                        {questions
-                          .filter((q) => selectedQIds.includes(q.id))
-                          .reduce((sum, q) => sum + q.marks, 0)}
-                      </span>
-                    </p>
+                    <div className="space-y-1.5 text-xs text-[#64748B]">
+                      <p>
+                        Selected pool marks:{" "}
+                        <span className="font-mono font-medium tabular-nums text-[#0F172A]">
+                          {questions
+                            .filter((q) => selectedQIds.includes(q.id))
+                            .reduce((sum, q) => sum + q.marks, 0)}
+                        </span>
+                      </p>
+                      {(() => {
+                        const selectedPool = questions.filter((q) =>
+                          selectedQIds.includes(q.id)
+                        );
+                        if (selectedPool.length === 0) return null;
+                        const quotas = previewStratifiedQuotas(
+                          selectedPool,
+                          questionsPerPaper
+                        );
+                        const isStratified =
+                          randomizeQ &&
+                          questionsPerPaper > 0 &&
+                          questionsPerPaper < selectedPool.length;
+                        return (
+                          <div
+                            className={`rounded-lg border px-2.5 py-2 ${
+                              isStratified
+                                ? "border-[#0F766E]/30 bg-[#F0FDFA] text-[#0F766E]"
+                                : "border-[rgba(15,23,42,0.10)] bg-[#F6F8FA] text-[#475569]"
+                            }`}
+                          >
+                            <span className="font-medium">
+                              {isStratified
+                                ? "Stratified fairness active:"
+                                : "Paper difficulty mix:"}
+                            </span>{" "}
+                            <span className="font-mono tabular-nums">
+                              {quotas.easy} Easy / {quotas.medium} Medium /{" "}
+                              {quotas.hard} Hard
+                            </span>
+                            {isStratified
+                              ? " per candidate paper."
+                              : " (set questions per paper below pool size with randomization on to stratify)."}
+                          </div>
+                        );
+                      })()}
+                    </div>
 
                     <div className="flex flex-wrap gap-4 text-xs font-medium text-[#0F172A]">
                       <label className="flex cursor-pointer items-center gap-2">
@@ -1112,6 +1218,13 @@ export default function ExaminerPage() {
                               <span className="rounded-md border border-[rgba(15,23,42,0.14)] bg-[#F6F8FA] px-2 py-0.5 text-xs font-medium capitalize text-[#0F172A]">
                                 {exam.status}
                               </span>
+                              {exam.stratifiedBalanced && exam.stratifiedQuotas && (
+                                <span className="rounded-md border border-[#0F766E]/30 bg-[#F0FDFA] px-2 py-0.5 font-mono text-xs font-medium text-[#0F766E]">
+                                  Stratified {exam.stratifiedQuotas.easy}E/
+                                  {exam.stratifiedQuotas.medium}M/
+                                  {exam.stratifiedQuotas.hard}H
+                                </span>
+                              )}
                             </div>
                             <h3 className="mt-2 text-base font-semibold text-[#0F172A]">
                               {exam.title}
@@ -1196,9 +1309,12 @@ export default function ExaminerPage() {
                               onClick={() => {
                                 if (
                                   exam.status === "draft" &&
-                                  st === "published"
+                                  (st === "published" || st === "ongoing")
                                 ) {
-                                  setReviewPublishExam(exam);
+                                  setReviewPublishExam({
+                                    exam,
+                                    targetStatus: st,
+                                  });
                                 } else {
                                   patchExam(exam.id, { status: st });
                                 }
@@ -1540,30 +1656,34 @@ export default function ExaminerPage() {
                               </span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => startEditQuestion(q)}
-                              className="inline-flex min-h-[36px] cursor-pointer items-center gap-1 rounded-md border border-[rgba(15,23,42,0.14)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
-                            >
-                              <Pencil
-                                className="h-3 w-3"
-                                aria-hidden="true"
-                              />
-                              <span>Edit</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteQuestion(q.id)}
-                              className="inline-flex min-h-[36px] cursor-pointer items-center gap-1 rounded-md border border-[#B91C1C]/30 px-2.5 py-1 text-xs font-medium text-[#B91C1C] transition-colors hover:bg-[#FEF2F2]"
-                            >
-                              <Trash2
-                                className="h-3 w-3"
-                                aria-hidden="true"
-                              />
-                              <span>Delete</span>
-                            </button>
-                          </div>
+                          {(me?.role === "admin" ||
+                            !q.createdById ||
+                            q.createdById === me?.id) && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditQuestion(q)}
+                                className="inline-flex min-h-[36px] cursor-pointer items-center gap-1 rounded-md border border-[rgba(15,23,42,0.14)] px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
+                              >
+                                <Pencil
+                                  className="h-3 w-3"
+                                  aria-hidden="true"
+                                />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteQuestion(q.id)}
+                                className="inline-flex min-h-[36px] cursor-pointer items-center gap-1 rounded-md border border-[#B91C1C]/30 px-2.5 py-1 text-xs font-medium text-[#B91C1C] transition-colors hover:bg-[#FEF2F2]"
+                              >
+                                <Trash2
+                                  className="h-3 w-3"
+                                  aria-hidden="true"
+                                />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                         <p className="mt-2 text-sm text-[#475569]">{q.prompt}</p>
                         {q.type === "written" && q.rubric && (
@@ -2003,11 +2123,15 @@ export default function ExaminerPage() {
                       <textarea
                         id="ann-msg"
                         rows={3}
+                        maxLength={500}
                         placeholder="Send message to active candidates"
                         value={annMessage}
                         onChange={(e) => setAnnMessage(e.target.value)}
                         className="w-full rounded-lg border border-[rgba(15,23,42,0.16)] p-2.5 text-sm"
                       />
+                      <p className="text-right font-mono text-[11px] tabular-nums text-[#64748B]">
+                        {annMessage.length} / 500
+                      </p>
                       <button
                         type="submit"
                         className="inline-flex min-h-[40px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
@@ -2624,6 +2748,39 @@ export default function ExaminerPage() {
                     <span>Randomize options</span>
                   </label>
                 </div>
+                {(() => {
+                  const pool = questions.filter((q) =>
+                    editExQIds.includes(q.id)
+                  );
+                  if (pool.length === 0) return null;
+                  const quotas = previewStratifiedQuotas(
+                    pool,
+                    editExQuestionsPerPaper
+                  );
+                  const active =
+                    editExRandomizeQ &&
+                    editExQuestionsPerPaper > 0 &&
+                    editExQuestionsPerPaper < pool.length;
+                  return (
+                    <div
+                      className={`rounded-lg border px-2.5 py-2 text-xs ${
+                        active
+                          ? "border-[#0F766E]/30 bg-[#F0FDFA] text-[#0F766E]"
+                          : "border-[rgba(15,23,42,0.10)] bg-[#F6F8FA] text-[#475569]"
+                      }`}
+                    >
+                      <span className="font-medium">
+                        {active
+                          ? "Stratified fairness active:"
+                          : "Paper difficulty mix:"}
+                      </span>{" "}
+                      <span className="font-mono tabular-nums">
+                        {quotas.easy} Easy / {quotas.medium} Medium /{" "}
+                        {quotas.hard} Hard
+                      </span>
+                    </div>
+                  );
+                })()}
                 <div>
                   <p className="text-xs font-medium text-[#0F172A]">
                     Assigned questions (
@@ -2734,7 +2891,9 @@ export default function ExaminerPage() {
                   className="text-base font-semibold text-[#0F172A]"
                 >
                   Pre-publication checklist:{" "}
-                  <span className="font-mono">{reviewPublishExam.code}</span>
+                  <span className="font-mono">
+                    {reviewPublishExam.exam.code}
+                  </span>
                 </h2>
                 <button
                   type="button"
@@ -2747,13 +2906,13 @@ export default function ExaminerPage() {
               </div>
 
               {(() => {
-                const hasQuestions = reviewPublishExam.questionIds.length >= 1;
+                const targetExam = reviewPublishExam.exam;
+                const hasQuestions = targetExam.questionIds.length >= 1;
                 const validWindow =
-                  new Date(reviewPublishExam.windowEnd).getTime() >
-                  new Date(reviewPublishExam.windowStart).getTime();
-                const validDuration = reviewPublishExam.durationMinutes >= 1;
-                const hasEnrolled =
-                  reviewPublishExam.enrolledCandidateIds.length >= 1;
+                  new Date(targetExam.windowEnd).getTime() >
+                  new Date(targetExam.windowStart).getTime();
+                const validDuration = targetExam.durationMinutes >= 1;
+                const hasEnrolled = targetExam.enrolledCandidateIds.length >= 1;
                 const readyToPublish =
                   hasQuestions && validWindow && validDuration;
 
@@ -2776,9 +2935,28 @@ export default function ExaminerPage() {
                           Questions assigned
                         </span>
                         <span className="font-mono font-semibold tabular-nums text-[#0F172A]">
-                          {reviewPublishExam.questionIds.length}
+                          {targetExam.questionIds.length} pool /{" "}
+                          {targetExam.questionsPerPaper} paper
                         </span>
                       </li>
+                      {targetExam.stratifiedQuotas && (
+                        <li className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 text-[#0F172A]">
+                            <CheckCircle2
+                              className="h-4 w-4 text-[#0F766E]"
+                              aria-hidden="true"
+                            />
+                            {targetExam.stratifiedBalanced
+                              ? "Stratified paper balance"
+                              : "Difficulty distribution"}
+                          </span>
+                          <span className="font-mono font-semibold tabular-nums text-[#0F172A]">
+                            {targetExam.stratifiedQuotas.easy}E /{" "}
+                            {targetExam.stratifiedQuotas.medium}M /{" "}
+                            {targetExam.stratifiedQuotas.hard}H
+                          </span>
+                        </li>
+                      )}
                       <li className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 text-[#0F172A]">
                           {validDuration ? (
@@ -2795,7 +2973,7 @@ export default function ExaminerPage() {
                           Duration valid
                         </span>
                         <span className="font-mono font-semibold tabular-nums text-[#0F172A]">
-                          {reviewPublishExam.durationMinutes} min
+                          {targetExam.durationMinutes} min
                         </span>
                       </li>
                       <li className="flex items-center justify-between gap-2">
@@ -2814,7 +2992,7 @@ export default function ExaminerPage() {
                           Availability window valid
                         </span>
                         <span className="font-mono font-semibold tabular-nums text-[#0F172A]">
-                          {reviewPublishExam.totalMarks} marks
+                          {targetExam.totalMarks} pool marks
                         </span>
                       </li>
                       <li className="flex items-center justify-between gap-2">
@@ -2833,7 +3011,7 @@ export default function ExaminerPage() {
                           Enrolled candidates
                         </span>
                         <span className="font-mono font-semibold tabular-nums text-[#0F172A]">
-                          {reviewPublishExam.enrolledCandidateIds.length}
+                          {targetExam.enrolledCandidateIds.length}
                         </span>
                       </li>
                     </ul>
@@ -2850,13 +3028,15 @@ export default function ExaminerPage() {
                         type="button"
                         disabled={!readyToPublish}
                         onClick={async () => {
-                          const id = reviewPublishExam.id;
+                          const { exam: ex, targetStatus } = reviewPublishExam;
                           setReviewPublishExam(null);
-                          await patchExam(id, { status: "published" });
+                          await patchExam(ex.id, { status: targetStatus });
                         }}
                         className="min-h-[40px] cursor-pointer rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF] disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Publish exam
+                        {reviewPublishExam.targetStatus === "ongoing"
+                          ? "Publish and start exam"
+                          : "Publish exam"}
                       </button>
                     </div>
                   </>

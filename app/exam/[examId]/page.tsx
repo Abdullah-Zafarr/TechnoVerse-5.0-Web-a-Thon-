@@ -137,6 +137,7 @@ function ExamWorkspaceContent() {
   const [graceNotice, setGraceNotice] = useState<string | null>(null);
 
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [showAllAnnouncements, setShowAllAnnouncements] = useState(false);
   const [prefs, setPrefs] = useState<WorkspacePrefs>({
     fontSize: "md",
     theme: "paper",
@@ -1178,15 +1179,45 @@ function ExamWorkspaceContent() {
 
       {announcements.length > 0 && (
         <div className="border-b border-[#1D4ED8]/20 bg-[#EFF6FF] px-4 py-2 text-xs text-[#0F172A] sm:px-6">
-          <div className="mx-auto flex max-w-[1440px] items-center gap-2">
-            <Bell
-              className="h-3.5 w-3.5 shrink-0 text-[#1D4ED8]"
-              aria-hidden="true"
-            />
-            <span>
-              <span className="font-semibold">Announcement:</span>{" "}
-              {announcements[0].message}
-            </span>
+          <div className="mx-auto max-w-[1440px]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Bell
+                  className="h-3.5 w-3.5 shrink-0 text-[#1D4ED8]"
+                  aria-hidden="true"
+                />
+                <span>
+                  <span className="font-semibold">Announcement:</span>{" "}
+                  {announcements[0].message}
+                </span>
+              </div>
+              {announcements.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllAnnouncements((v) => !v)}
+                  className="cursor-pointer font-medium text-[#1D4ED8] underline"
+                >
+                  {showAllAnnouncements
+                    ? "Hide earlier"
+                    : `+${announcements.length - 1} earlier`}
+                </button>
+              )}
+            </div>
+            {showAllAnnouncements && announcements.length > 1 && (
+              <ul className="mt-2 space-y-1 border-t border-[#1D4ED8]/15 pt-2 text-xs text-[#334155]">
+                {announcements.slice(1).map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <span>{a.message}</span>
+                    <span className="font-mono tabular-nums text-[#64748B]">
+                      {new Date(a.createdAt).toLocaleTimeString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
