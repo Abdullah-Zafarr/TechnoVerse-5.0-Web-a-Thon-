@@ -7,35 +7,14 @@ import {
   ArrowRight,
   Clock,
   CheckCircle2,
-  ShieldAlert,
   QrCode,
   Flag,
+  ShieldCheck,
+  Lock,
+  FileCheck2,
 } from "lucide-react";
 import TopNav from "@/components/TopNav";
 import type { SafeUser } from "@/lib/types";
-
-const DEMO_ACCOUNTS = [
-  {
-    email: "admin@examguard.edu",
-    role: "Administrator",
-    route: "/admin",
-  },
-  {
-    email: "examiner@examguard.edu",
-    role: "Examiner",
-    route: "/examiner",
-  },
-  {
-    email: "candidate1@examguard.edu",
-    role: "Candidate (Bilal)",
-    route: "/candidate",
-  },
-  {
-    email: "candidate2@examguard.edu",
-    role: "Candidate (Sana)",
-    route: "/candidate",
-  },
-];
 
 interface PreviewQuestion {
   num: string;
@@ -111,14 +90,27 @@ const PREVIEW_QUESTIONS: PreviewQuestion[] = [
   },
 ];
 
-export default function HomePage() {
+const CAPABILITIES = [
+  {
+    icon: ShieldCheck,
+    title: "Role-isolated workspaces",
+    detail: "Separate portals for admins, examiners, and candidates with server-enforced RBAC.",
+  },
+  {
+    icon: Lock,
+    title: "Immutable attempt snapshots",
+    detail: "Questions, timers, and marking schemes freeze at attempt start with monotonic save guards.",
+  },
+  {
+    icon: FileCheck2,
+    title: "QR-verified transcripts",
+    detail: "Issue tamper-evident PDF score reports verifiable without exposing private candidate data.",
+  },
+];
+
+export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState<SafeUser | null>(null);
-  const [email, setEmail] = useState("candidate1@examguard.edu");
-  const [password, setPassword] = useState("demo1234");
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const [previewIdx, setPreviewIdx] = useState(2);
   const [previewChoice, setPreviewChoice] = useState<Record<number, number>>({
@@ -138,71 +130,11 @@ export default function HomePage() {
       .catch(() => {});
   }, []);
 
-  function validateEmailField(val: string) {
-    if (!val.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
-      setEmailError("Enter a valid email address");
-      return false;
-    }
-    setEmailError(null);
-    return true;
-  }
-
   function routeForUser(u: SafeUser) {
     if (u.role === "admin") router.push("/admin");
     else if (u.role === "examiner") router.push("/examiner");
     else router.push("/candidate");
     router.refresh();
-  }
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!validateEmailField(email) || !password.trim()) {
-      setError("Fix highlighted fields before signing in");
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = (await res.json()) as { user?: SafeUser; error?: string };
-      if (!res.ok || !data.user) {
-        setError(data.error ?? "Sign-in failed");
-        setLoading(false);
-        return;
-      }
-      routeForUser(data.user);
-    } catch {
-      setError("Network error while signing in");
-      setLoading(false);
-    }
-  }
-
-  async function handleDemoSignIn(targetEmail: string, targetRoute: string) {
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: targetEmail, password: "demo1234" }),
-      });
-      const data = (await res.json()) as { user?: SafeUser; error?: string };
-      if (!res.ok || !data.user) {
-        setError(data.error ?? "Sign-in failed");
-        setLoading(false);
-        return;
-      }
-      setUser(data.user);
-      router.push(targetRoute);
-      router.refresh();
-    } catch {
-      setError("Network error");
-      setLoading(false);
-    }
   }
 
   const activePreview = PREVIEW_QUESTIONS[previewIdx];
@@ -218,7 +150,7 @@ export default function HomePage() {
         className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:py-10"
       >
         <div className="grid gap-8 lg:grid-cols-12 lg:items-start">
-          {/* Left column: Headline, value statement, sign-in & quick role switch */}
+          {/* Left column: Hero, primary actions, and platform capabilities */}
           <section className="space-y-6 lg:col-span-6">
             <div>
               <h1 className="max-w-[26ch] text-3xl font-semibold tracking-tight text-[#0F172A] sm:text-4xl">
@@ -231,131 +163,69 @@ export default function HomePage() {
               </p>
             </div>
 
-            {user && (
+            {user ? (
               <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#1D4ED8]/30 bg-[#EFF6FF] p-4">
                 <div>
                   <p className="text-sm font-medium text-[#0F172A]">
                     Active session: {user.name} ({user.role})
                   </p>
                   <p className="text-xs text-[#475569]">
-                    Continue to your workspace or choose another role below
+                    Continue to your workspace or switch accounts
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => routeForUser(user)}
-                  className="inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href="/login"
+                    className="inline-flex min-h-[40px] cursor-pointer items-center rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-3.5 py-2 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                  >
+                    Switch account
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => routeForUser(user)}
+                    className="inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+                  >
+                    <span>Open workspace</span>
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href="/login"
+                  className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-lg bg-[#1D4ED8] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
                 >
-                  <span>Open workspace</span>
+                  <span>Sign in to workspace</span>
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </button>
+                </Link>
+                <Link
+                  href="/verify"
+                  className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-4 py-2.5 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                >
+                  <QrCode className="h-4 w-4 text-[#1D4ED8]" aria-hidden="true" />
+                  <span>Verify a report</span>
+                </Link>
               </div>
             )}
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-5">
-                <h2 className="text-base font-semibold text-[#0F172A]">
-                  Sign in with credentials
-                </h2>
-                <p className="mt-1 text-xs text-[#64748B]">
-                  Demo password{" "}
-                  <code className="rounded-md bg-[#EEF2F6] px-1.5 py-0.5 font-mono text-[#0F172A]">
-                    demo1234
-                  </code>
-                </p>
-
-                {error && (
-                  <div
-                    role="alert"
-                    className="mt-3 flex items-center gap-2 rounded-lg border border-[#B91C1C]/30 bg-[#FEF2F2] p-3 text-sm text-[#B91C1C]"
-                  >
-                    <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                <form onSubmit={handleLogin} className="mt-4 space-y-3" noValidate>
-                  <div>
-                    <label
-                      htmlFor="login-email"
-                      className="block text-xs font-medium text-[#0F172A]"
-                    >
-                      Email address
-                    </label>
-                    <input
-                      id="login-email"
-                      type="email"
-                      required
-                      value={email}
-                      onBlur={() => validateEmailField(email)}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        if (emailError) validateEmailField(e.target.value);
-                      }}
-                      className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm text-[#0F172A]"
-                    />
-                    {emailError && (
-                      <p className="mt-1 text-xs text-[#B91C1C]">{emailError}</p>
-                    )}
+            <div className="grid gap-3 pt-2">
+              {CAPABILITIES.map(({ icon: Icon, title, detail }) => (
+                <div
+                  key={title}
+                  className="flex items-start gap-3 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#1D4ED8]">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
                   </div>
                   <div>
-                    <label
-                      htmlFor="login-password"
-                      className="block text-xs font-medium text-[#0F172A]"
-                    >
-                      Password
-                    </label>
-                    <input
-                      id="login-password"
-                      type="password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm text-[#0F172A]"
-                    />
+                    <h2 className="text-sm font-semibold text-[#0F172A]">
+                      {title}
+                    </h2>
+                    <p className="mt-0.5 text-xs text-[#475569]">{detail}</p>
                   </div>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="min-h-[40px] w-full cursor-pointer rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF] disabled:opacity-60"
-                  >
-                    {loading ? "Signing in..." : "Sign in"}
-                  </button>
-                </form>
-              </div>
-
-              <div className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-5">
-                <h2 className="text-base font-semibold text-[#0F172A]">
-                  Quick role access
-                </h2>
-                <p className="mt-1 text-xs text-[#475569]">
-                  Launch a role workspace directly for evaluation
-                </p>
-                <div className="mt-3 space-y-2">
-                  {DEMO_ACCOUNTS.map((acc) => (
-                    <button
-                      key={acc.email}
-                      type="button"
-                      disabled={loading}
-                      onClick={() => handleDemoSignIn(acc.email, acc.route)}
-                      className="flex min-h-[44px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-[rgba(15,23,42,0.10)] bg-[#F6F8FA] px-3 py-2 text-left transition-colors hover:border-[#1D4ED8] hover:bg-white disabled:opacity-60"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-[#0F172A]">
-                          {acc.role}
-                        </p>
-                        <p className="truncate text-xs text-[#475569]">
-                          {acc.email}
-                        </p>
-                      </div>
-                      <ArrowRight
-                        className="h-4 w-4 shrink-0 text-[#1D4ED8]"
-                        aria-hidden="true"
-                      />
-                    </button>
-                  ))}
                 </div>
-              </div>
+              ))}
             </div>
           </section>
 

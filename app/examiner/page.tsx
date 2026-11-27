@@ -812,7 +812,7 @@ export default function ExaminerPage() {
             </h1>
           </div>
           <Link
-            href="/portal"
+            href="/login"
             className="inline-flex min-h-[40px] cursor-pointer items-center rounded-lg border border-[rgba(15,23,42,0.12)] bg-white px-3.5 py-2 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
           >
             Switch account

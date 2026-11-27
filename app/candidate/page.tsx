@@ -404,7 +404,7 @@ export default function CandidatePage() {
                 )}
               </p>
               <Link
-                href="/portal"
+                href="/login"
                 className="mt-4 inline-flex min-h-[36px] cursor-pointer items-center rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
               >
                 Switch account

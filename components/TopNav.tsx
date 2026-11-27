@@ -15,7 +15,7 @@ export default function TopNav({ user }: TopNavProps) {
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/portal");
+    router.push("/login");
     router.refresh();
   }
 
@@ -99,7 +99,12 @@ export default function TopNav({ user }: TopNavProps) {
               </button>
             </>
           ) : (
-            <span className="text-xs font-medium text-[#64748B]">Not signed in</span>
+            <Link
+              href="/login"
+              className="inline-flex min-h-[40px] cursor-pointer items-center rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+            >
+              Sign in
+            </Link>
           )}
         </div>
       </div>
