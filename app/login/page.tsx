@@ -131,7 +131,7 @@ export default function LoginPage() {
         }}
       />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-5xl shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6">
+      <header className="relative z-10 mx-auto flex w-full max-w-[1440px] shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6">
         <a
           href="/"
           className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20 sm:px-3.5 sm:text-sm"
@@ -150,10 +150,10 @@ export default function LoginPage() {
 
       <main
         id="main-content"
-        className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 items-center px-4 py-6 pb-10 sm:px-6 lg:py-4"
+        className="relative z-10 mx-auto flex w-full max-w-[1440px] flex-1 items-center px-4 py-6 pb-10 sm:px-6 lg:py-4"
       >
-        <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-12 lg:items-center lg:gap-10">
-          <div className="space-y-4 lg:col-span-6">
+        <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-12 lg:items-center lg:gap-12">
+          <div className="space-y-4 lg:col-span-7">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-4xl">
                 Sign in to <span className="text-[#38BDF8]">ExamGuard</span>
@@ -215,7 +215,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="lg:col-span-6">
+          <div className="lg:col-span-5">
             <div className="rounded-2xl border border-white/15 bg-[#0A1F56]/80 p-5 backdrop-blur-md sm:p-7">
               <h2 className="text-lg font-semibold text-white">
                 Sign in with credentials

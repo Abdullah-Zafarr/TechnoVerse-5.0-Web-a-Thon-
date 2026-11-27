@@ -193,7 +193,7 @@ export default function AdminPage() {
         {!loading && (!error || users.length > 0) && (
           <div className="mt-6 flex flex-col gap-6 lg:flex-row">
             {/* Responsive left navigation rail (240px on lg+) */}
-            <aside className="shrink-0 space-y-4 lg:w-[240px]">
+            <aside className="w-full min-w-0 shrink-0 space-y-4 lg:w-[240px]">
               <nav
                 role="tablist"
                 aria-label="Administration sections"

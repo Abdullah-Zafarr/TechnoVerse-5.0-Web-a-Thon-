@@ -916,7 +916,7 @@ export default function ExaminerWorkspaceClient({
           (me.role === "examiner" || me.role === "admin") && (
         <div className="mt-6 flex flex-col gap-6 lg:flex-row">
           {/* Responsive navigation rail (240px on lg+) */}
-          <aside className="shrink-0 space-y-4 lg:w-[240px]">
+          <aside className="w-full min-w-0 shrink-0 space-y-4 lg:w-[240px]">
             <nav
               role="tablist"
               aria-label="Examiner modules"
