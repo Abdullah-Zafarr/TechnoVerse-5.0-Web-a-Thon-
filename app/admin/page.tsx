@@ -223,22 +223,22 @@ export default function AdminPage() {
                 ))}
               </nav>
 
-              <dl className="hidden space-y-3 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 text-xs lg:block">
-                <div className="flex items-center justify-between">
+              <dl className="grid grid-cols-3 gap-2 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-3 text-xs lg:block lg:space-y-3 lg:p-4">
+                <div className="flex flex-col gap-0.5 lg:flex-row lg:items-center lg:justify-between">
                   <dt className="text-[#64748B]">Total accounts</dt>
-                  <dd className="font-mono font-semibold tabular-nums text-[#0F172A]">
+                  <dd className="font-mono text-sm font-semibold tabular-nums text-[#0F172A] lg:text-xs">
                     {users.length}
                   </dd>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-0.5 lg:flex-row lg:items-center lg:justify-between">
                   <dt className="text-[#64748B]">Active accounts</dt>
-                  <dd className="font-mono font-semibold tabular-nums text-[#0F766E]">
+                  <dd className="font-mono text-sm font-semibold tabular-nums text-[#0F766E] lg:text-xs">
                     {activeUsersCount}
                   </dd>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-0.5 lg:flex-row lg:items-center lg:justify-between">
                   <dt className="text-[#64748B]">Audit events</dt>
-                  <dd className="font-mono font-semibold tabular-nums text-[#0F172A]">
+                  <dd className="font-mono text-sm font-semibold tabular-nums text-[#0F172A] lg:text-xs">
                     {auditLogs.length}
                   </dd>
                 </div>
@@ -335,15 +335,85 @@ export default function AdminPage() {
                     </form>
                   </section>
 
-                  <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6 xl:col-span-8">
+                  <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 sm:p-6 xl:col-span-8">
                     <h2 className="text-base font-semibold text-[#0F172A]">
                       Platform users{" "}
                       <span className="font-mono text-sm font-medium tabular-nums text-[#64748B]">
                         ({users.length})
                       </span>
                     </h2>
-                    <div className="mt-4 overflow-x-auto">
-                      <table className="w-full border-collapse text-left text-sm">
+
+                    {/* Mobile stacked user cards */}
+                    <div className="mt-4 space-y-3 md:hidden">
+                      {users.map((u) => (
+                        <div
+                          key={u.id}
+                          className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-[#F6F8FA] p-3.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#0F172A]">
+                                {u.name}
+                              </p>
+                              <p className="truncate text-xs text-[#475569]">
+                                {u.email}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-medium ${
+                                u.active
+                                  ? "bg-[#F0FDFA] text-[#0F766E]"
+                                  : "bg-[#FEF2F2] text-[#B91C1C]"
+                              }`}
+                            >
+                              {u.active ? "Active" : "Disabled"}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <select
+                              aria-label={`Role for ${u.name}`}
+                              value={u.role}
+                              onChange={(e) =>
+                                handleUpdateUser(u.id, {
+                                  role: e.target.value as Role,
+                                })
+                              }
+                              className="min-h-[40px] flex-1 rounded-md border border-[rgba(15,23,42,0.16)] bg-white px-2.5 py-1.5 text-xs"
+                            >
+                              <option value="candidate">Candidate</option>
+                              <option value="examiner">Examiner</option>
+                              <option value="admin">Administrator</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(u)}
+                              className="inline-flex min-h-[40px] cursor-pointer items-center gap-1 rounded-md border border-[rgba(15,23,42,0.14)] bg-white px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
+                            >
+                              <Pencil
+                                className="h-3.5 w-3.5"
+                                aria-hidden="true"
+                              />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateUser(u.id, {
+                                  active: !u.active,
+                                })
+                              }
+                              className="min-h-[40px] cursor-pointer rounded-md border border-[rgba(15,23,42,0.14)] bg-white px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
+                            >
+                              {u.active ? "Disable" : "Enable"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Desktop table */}
+                    <div className="mt-4 hidden overflow-x-auto md:block">
+                      <table className="w-full min-w-[600px] border-collapse text-left text-sm">
                         <thead>
                           <tr className="border-b border-[rgba(15,23,42,0.12)] text-xs text-[#64748B]">
                             <th className="py-2 pr-3 font-medium">Name</th>
@@ -475,7 +545,7 @@ export default function AdminPage() {
             aria-labelledby="edit-user-title"
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/40 p-4"
           >
-            <div className="w-full max-w-md rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-6">
+            <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-4 sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <h2
                   id="edit-user-title"

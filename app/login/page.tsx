@@ -116,7 +116,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative flex h-dvh max-h-dvh flex-col overflow-hidden bg-[#071947]">
+    <div className="relative flex min-h-dvh flex-col overflow-x-hidden bg-[#071947] lg:h-dvh lg:max-h-dvh lg:overflow-hidden">
       <LoginGlobe />
       <div
         aria-hidden="true"
@@ -131,34 +131,34 @@ export default function LoginPage() {
         }}
       />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-5xl shrink-0 items-center justify-between px-4 pt-4 sm:px-6">
+      <header className="relative z-10 mx-auto flex w-full max-w-5xl shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6">
         <a
           href="/"
-          className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+          className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/20 sm:px-3.5 sm:text-sm"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>Back to home</span>
         </a>
         <Link
           href="/verify"
-          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-[#CBD5E1] backdrop-blur-sm transition-colors hover:bg-white/10 hover:text-white"
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-[#CBD5E1] backdrop-blur-sm transition-colors hover:bg-white/10 hover:text-white sm:px-3.5 sm:text-sm"
         >
-          <QrCode className="h-4 w-4" aria-hidden="true" />
+          <QrCode className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>Verify report</span>
         </Link>
       </header>
 
       <main
         id="main-content"
-        className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 items-center px-4 py-4 sm:px-6"
+        className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 items-center px-4 py-6 pb-10 sm:px-6 lg:py-4"
       >
         <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-12 lg:items-center lg:gap-10">
           <div className="space-y-4 lg:col-span-6">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-4xl">
                 Sign in to <span className="text-[#38BDF8]">ExamGuard</span>
               </h1>
-              <p className="mt-1.5 text-base text-[#CBD5E1]">
+              <p className="mt-1.5 text-sm text-[#CBD5E1] sm:text-base">
                 Use your account credentials or launch a role workspace directly.
               </p>
             </div>
@@ -176,7 +176,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => routeForUser(user)}
-                  className="inline-flex min-h-[44px] shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1D4ED8]"
+                  className="inline-flex min-h-[44px] w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1D4ED8] sm:w-auto"
                 >
                   <span>Open workspace</span>
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -216,7 +216,7 @@ export default function LoginPage() {
           </div>
 
           <div className="lg:col-span-6">
-            <div className="rounded-2xl border border-white/15 bg-[#0A1F56]/80 p-6 backdrop-blur-md sm:p-7">
+            <div className="rounded-2xl border border-white/15 bg-[#0A1F56]/80 p-5 backdrop-blur-md sm:p-7">
               <h2 className="text-lg font-semibold text-white">
                 Sign in with credentials
               </h2>

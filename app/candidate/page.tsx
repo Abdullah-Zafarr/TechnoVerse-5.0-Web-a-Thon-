@@ -272,34 +272,34 @@ export default function CandidatePage() {
         key={exam.id}
         className="flex flex-col overflow-hidden rounded-2xl border border-[rgba(15,23,42,0.08)] border-t-2 border-t-[#38BDF8] bg-white shadow-sm"
       >
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-4 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm text-[#475569]">
               {exam.code} · {subjectOf(exam.code)}
             </p>
-            <span className={`rounded-full border px-3 py-0.5 text-xs font-medium ${pillCls}`}>
+            <span className={`shrink-0 rounded-full border px-3 py-0.5 text-xs font-medium ${pillCls}`}>
               {pill}
             </span>
           </div>
-          <h3 className="mt-3 text-xl font-bold text-[#0F172A]">{exam.title}</h3>
+          <h3 className="mt-3 text-lg font-bold text-[#0F172A] sm:text-xl">{exam.title}</h3>
           <p className="mt-2 text-sm leading-relaxed text-[#475569]">
             {exam.instructions}
           </p>
-          <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl border border-[rgba(15,23,42,0.08)] bg-[#F6F8FA] px-4 py-3 text-sm text-[#475569]">
+          <div className="mt-4 grid grid-cols-1 gap-2 rounded-xl border border-[rgba(15,23,42,0.08)] bg-[#F6F8FA] px-3.5 py-2.5 text-sm text-[#475569] sm:grid-cols-3 sm:px-4 sm:py-3">
             <span className="inline-flex items-center gap-1.5">
-              <Clock className="h-4 w-4" aria-hidden="true" />
+              <Clock className="h-4 w-4 shrink-0" aria-hidden="true" />
               {exam.durationMinutes} mins
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <FileText className="h-4 w-4" aria-hidden="true" />
+              <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
               {exam.questionsPerPaper} questions
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+              <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
               {exam.totalMarks} marks
             </span>
           </div>
-          <p className="mt-4 text-sm text-[#475569]">
+          <p className="mt-4 text-xs text-[#475569] sm:text-sm">
             Window: {fmtFull(exam.windowStart)} – {fmtFull(exam.windowEnd)}
           </p>
         </div>
@@ -419,11 +419,11 @@ export default function CandidatePage() {
                 Switch account
               </Link>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3 lg:w-auto">
               {summaryCards.map((s) => (
                 <div
                   key={s.label}
-                  className="w-[190px] rounded-xl border border-white/25 bg-white/15 px-4 py-3"
+                  className="rounded-xl border border-white/25 bg-white/15 px-4 py-3 lg:min-w-[180px]"
                 >
                   <div className="text-xs text-white/80">{s.label}</div>
                   <div className="mt-1 truncate font-mono text-xl font-bold tabular-nums">
@@ -457,11 +457,14 @@ export default function CandidatePage() {
         {!loading && !error && (
           <div className="mt-8 space-y-10">
             <section aria-label="Your examinations">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <h2 className="text-2xl font-bold tracking-tight text-[#0F172A]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+                <h2 className="text-xl font-bold tracking-tight text-[#0F172A] sm:text-2xl">
                   Your Examinations
                 </h2>
-                <div role="tablist" className="inline-flex gap-1 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white/80 p-1">
+                <div
+                  role="tablist"
+                  className="flex w-full gap-1 overflow-x-auto rounded-xl border border-[rgba(15,23,42,0.10)] bg-white/80 p-1 sm:inline-flex sm:w-auto"
+                >
                   {tabs.map((t) => (
                     <button
                       key={t.key}
@@ -469,7 +472,7 @@ export default function CandidatePage() {
                       role="tab"
                       aria-selected={tab === t.key}
                       onClick={() => setTab(t.key)}
-                      className={`min-h-[40px] cursor-pointer rounded-lg px-4 text-sm font-medium transition-colors ${
+                      className={`min-h-[44px] flex-1 cursor-pointer whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors sm:min-h-[40px] sm:flex-none sm:px-4 sm:text-sm ${
                         tab === t.key
                           ? "bg-white text-[#1E40AF] shadow-sm"
                           : "text-[#475569] hover:text-[#0F172A]"
@@ -547,7 +550,7 @@ export default function CandidatePage() {
                         key={e.id}
                         className="flex flex-col overflow-hidden rounded-2xl border border-[rgba(15,23,42,0.08)] bg-white shadow-sm"
                       >
-                        <div className="flex-1 p-6">
+                        <div className="flex-1 p-4 sm:p-6">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex flex-wrap items-center gap-2 text-xs text-[#64748B]">
                               <span className="rounded-md border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 font-mono font-semibold text-[#1D4ED8]">
@@ -647,7 +650,7 @@ export default function CandidatePage() {
             aria-labelledby="breakdown-title"
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/40 p-4"
           >
-            <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-6">
+            <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-4 sm:p-6">
               <div className="flex items-start justify-between gap-4 border-b border-[rgba(15,23,42,0.10)] pb-4">
                 <div>
                   <h2

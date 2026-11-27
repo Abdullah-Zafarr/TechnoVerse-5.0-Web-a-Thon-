@@ -973,7 +973,7 @@ export default function ExaminerWorkspaceClient({
           <div className="min-w-0 flex-1">
             {tab === "exams" && (
               <div className="grid items-start gap-6 xl:grid-cols-12">
-                <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6 xl:col-span-5">
+                <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 sm:p-6 xl:col-span-5">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-base font-semibold text-[#0F172A]">
                       <Plus className="h-4 w-4 text-[#1D4ED8]" aria-hidden="true" />
@@ -1006,7 +1006,7 @@ export default function ExaminerWorkspaceClient({
                     className="mt-4 space-y-3"
                     noValidate
                   >
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <div>
                         <label
                           htmlFor="ex-code"
@@ -1022,7 +1022,7 @@ export default function ExaminerWorkspaceClient({
                           className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] px-2.5 py-2 font-mono text-sm"
                         />
                       </div>
-                      <div className="col-span-2">
+                      <div className="sm:col-span-2">
                         <label
                           htmlFor="ex-title"
                           className="block text-xs font-medium text-[#0F172A]"
@@ -1459,7 +1459,7 @@ export default function ExaminerWorkspaceClient({
 
             {tab === "questions" && (
               <div className="grid items-start gap-6 xl:grid-cols-12">
-                <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6 xl:col-span-5">
+                <section className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 sm:p-6 xl:col-span-5">
                   <div className="flex items-center justify-between gap-2">
                     <h2 className="text-base font-semibold text-[#0F172A]">
                       {editingQId ? "Edit question" : "Add question to bank"}
@@ -2604,7 +2604,7 @@ export default function ExaminerWorkspaceClient({
                     <h2>Question performance analytics</h2>
                   </div>
                   <div className="mt-4 overflow-x-auto">
-                    <table className="w-full border-collapse text-left text-sm">
+                    <table className="w-full min-w-[640px] border-collapse text-left text-sm">
                       <thead>
                         <tr className="border-b border-[rgba(15,23,42,0.12)] text-xs text-[#64748B]">
                           <th className="py-2 pr-3 font-medium">Question</th>
@@ -2779,7 +2779,7 @@ export default function ExaminerWorkspaceClient({
                                           },
                                         }))
                                       }
-                                      className="min-h-[40px] min-w-[180px] flex-1 rounded-md border border-[rgba(15,23,42,0.16)] bg-white px-2.5 py-1.5 text-xs"
+                                      className="min-h-[40px] min-w-0 flex-1 rounded-md border border-[rgba(15,23,42,0.16)] bg-white px-2.5 py-1.5 text-xs sm:min-w-[180px]"
                                     />
                                     <button
                                       type="button"
@@ -2790,7 +2790,7 @@ export default function ExaminerWorkspaceClient({
                                           item.marks
                                         )
                                       }
-                                      className="min-h-[40px] cursor-pointer rounded-md bg-[#1D4ED8] px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-[#1E40AF]"
+                                      className="min-h-[40px] w-full cursor-pointer rounded-md bg-[#1D4ED8] px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-[#1E40AF] sm:w-auto"
                                     >
                                       Save grade
                                     </button>
@@ -2818,7 +2818,7 @@ export default function ExaminerWorkspaceClient({
             aria-labelledby="edit-exam-title"
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/40 p-4"
           >
-            <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-6">
+            <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-4 sm:p-6">
               <div className="flex items-center justify-between">
                 <h2
                   id="edit-exam-title"
@@ -3097,7 +3097,7 @@ export default function ExaminerWorkspaceClient({
             aria-labelledby="review-publish-title"
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/40 p-4"
           >
-            <div className="w-full max-w-md rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-6">
+            <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-4 sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <h2
                   id="review-publish-title"

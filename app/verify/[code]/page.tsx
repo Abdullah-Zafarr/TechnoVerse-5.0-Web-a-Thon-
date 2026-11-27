@@ -61,9 +61,9 @@ export default function VerifyReportPage() {
     <div className="min-h-screen bg-[#F6F8FA]">
       <TopNav user={user} />
 
-      <main id="main-content" className="mx-auto max-w-[1440px] px-4 py-10 sm:px-6">
+      <main id="main-content" className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 sm:py-10">
         <div className="mx-auto max-w-2xl">
-          <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A]">
+          <h1 className="text-xl font-semibold tracking-tight text-[#0F172A] sm:text-2xl">
             Verify report authenticity
           </h1>
           <p className="mt-2 text-sm text-[#475569]">
@@ -71,7 +71,7 @@ export default function VerifyReportPage() {
             private candidate details
           </p>
 
-          <form onSubmit={handleLookup} className="mt-6 flex flex-wrap gap-2">
+          <form onSubmit={handleLookup} className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:gap-2">
             <label htmlFor="verify-code" className="sr-only">
               Verification code
             </label>
@@ -81,18 +81,18 @@ export default function VerifyReportPage() {
               value={lookupCode}
               onChange={(e) => setLookupCode(e.target.value)}
               placeholder="EG-DEMO2026"
-              className="min-h-[40px] min-w-[200px] flex-1 rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 font-mono text-sm text-[#0F172A]"
+              className="min-h-[44px] w-full flex-1 rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 font-mono text-sm text-[#0F172A]"
             />
             <button
               type="submit"
-              className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+              className="inline-flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF] sm:w-auto"
             >
               <Search className="h-4 w-4" aria-hidden="true" />
               <span>Verify</span>
             </button>
           </form>
 
-          <div className="mt-6 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-6">
+          <div className="mt-6 rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4 sm:p-6">
             {loading ? (
               <p className="text-sm text-[#475569]">Checking report ledger...</p>
             ) : result?.valid ? (

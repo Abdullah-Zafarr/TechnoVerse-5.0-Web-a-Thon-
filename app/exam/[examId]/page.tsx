@@ -1140,26 +1140,48 @@ function ExamWorkspaceContent() {
               : "border-[rgba(15,23,42,0.10)] bg-white"
         }`}
       >
-        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="rounded-md bg-[#1D4ED8] px-2 py-0.5 font-mono text-xs font-semibold text-white">
-              {examMeta?.code}
-            </span>
-            {isSandbox && (
-              <span className="rounded-md border border-[#B45309]/40 bg-[#FFFBEB] px-2 py-0.5 text-xs font-medium text-[#B45309]">
-                Sandbox preview
+        <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-3 py-2.5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:py-3">
+          <div className="flex min-w-0 items-center justify-between gap-2 lg:flex-1 lg:justify-start">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 rounded-md bg-[#1D4ED8] px-2 py-0.5 font-mono text-xs font-semibold text-white">
+                {examMeta?.code}
               </span>
-            )}
-            <h1 className="text-sm font-semibold sm:text-base">
-              {examMeta?.title}
-            </h1>
+              {isSandbox && (
+                <span className="hidden shrink-0 rounded-md border border-[#B45309]/40 bg-[#FFFBEB] px-2 py-0.5 text-xs font-medium text-[#B45309] sm:inline-block">
+                  Sandbox preview
+                </span>
+              )}
+              <h1 className="truncate text-sm font-semibold sm:text-base">
+                {examMeta?.title}
+              </h1>
+            </div>
+
+            {/* Timer always pinned top-right on mobile */}
+            <div
+              aria-live="polite"
+              className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-sm font-semibold tabular-nums lg:hidden ${
+                isLocked
+                  ? "bg-[#B45309] text-white"
+                  : remainingMs < 120_000
+                    ? "bg-[#B91C1C] text-white"
+                    : "bg-[#0F172A] text-white"
+              }`}
+            >
+              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{formatCountdown(remainingMs)}</span>
+              {isLocked && (
+                <span className="rounded bg-black/25 px-1.5 py-0.5 text-[10px] font-bold tracking-wide">
+                  PAUSED
+                </span>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <div
               role="status"
               aria-live="polite"
-              className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
+              className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium sm:min-h-[40px] sm:py-1.5 ${
                 isLocked ||
                 syncStatus === "offline_queued" ||
                 syncStatus === "error"
@@ -1170,9 +1192,9 @@ function ExamWorkspaceContent() {
               }`}
             >
               {!isLocked ? (
-                <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
+                <Wifi className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               ) : (
-                <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
+                <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               )}
               <span>
                 {isLocked ? (
@@ -1199,7 +1221,7 @@ function ExamWorkspaceContent() {
                 ) : lastSyncedAt ? (
                   <>
                     Saved{" "}
-                    <span className="font-mono tabular-nums">
+                    <span className="hidden font-mono tabular-nums sm:inline">
                       {lastSyncedAt}
                     </span>
                   </>
@@ -1216,10 +1238,10 @@ function ExamWorkspaceContent() {
                 <button
                   type="button"
                   onClick={() => (isLocked ? sendHeartbeat() : flushQueue())}
-                  className="inline-flex min-h-[40px] cursor-pointer items-center gap-1 rounded-lg border border-[#1D4ED8]/40 bg-[#EFF6FF] px-3 py-1.5 text-xs font-medium text-[#1D4ED8]"
+                  className="inline-flex min-h-[38px] cursor-pointer items-center gap-1 rounded-lg border border-[#1D4ED8]/40 bg-[#EFF6FF] px-2.5 py-1 text-xs font-medium text-[#1D4ED8] sm:min-h-[40px] sm:px-3 sm:py-1.5"
                 >
                   <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{isLocked ? "Check connection" : "Retry sync"}</span>
+                  <span>{isLocked ? "Check" : "Retry"}</span>
                 </button>
               )}
 
@@ -1228,7 +1250,7 @@ function ExamWorkspaceContent() {
               aria-expanded={showScratchpad}
               disabled={isLocked}
               onClick={() => setShowScratchpad((v) => !v)}
-              className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[40px] sm:px-3 sm:py-1.5"
             >
               <PenTool className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Scratchpad</span>
@@ -1238,7 +1260,7 @@ function ExamWorkspaceContent() {
               type="button"
               aria-expanded={showPrefs}
               onClick={() => setShowPrefs((v) => !v)}
-              className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium"
+              className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-2.5 py-1 text-xs font-medium sm:min-h-[40px] sm:px-3 sm:py-1.5"
             >
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Display</span>
@@ -1246,7 +1268,7 @@ function ExamWorkspaceContent() {
 
             <div
               aria-live="polite"
-              className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-sm font-semibold tabular-nums ${
+              className={`hidden min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-sm font-semibold tabular-nums lg:inline-flex ${
                 isLocked
                   ? "bg-[#B45309] text-white"
                   : remainingMs < 120_000
@@ -1296,8 +1318,8 @@ function ExamWorkspaceContent() {
               : "border-[rgba(15,23,42,0.10)] bg-[#EEF2F6] text-[#0F172A]"
           }`}
         >
-          <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-6 text-xs">
-            <div className="flex items-center gap-2">
+          <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3 text-xs sm:gap-6">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold">Text size</span>
               {(
                 [
@@ -1310,7 +1332,7 @@ function ExamWorkspaceContent() {
                   key={sz}
                   type="button"
                   onClick={() => updatePrefs({ ...prefs, fontSize: sz })}
-                  className={`min-h-[32px] cursor-pointer rounded-md border px-2.5 py-1 font-medium ${
+                  className={`min-h-[36px] cursor-pointer rounded-md border px-2.5 py-1 font-medium ${
                     prefs.fontSize === sz
                       ? "border-[#1D4ED8] bg-[#1D4ED8] text-white"
                       : "border-current/20"
@@ -1320,7 +1342,7 @@ function ExamWorkspaceContent() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold">Theme</span>
               {(
                 [
@@ -1333,7 +1355,7 @@ function ExamWorkspaceContent() {
                   key={th}
                   type="button"
                   onClick={() => updatePrefs({ ...prefs, theme: th })}
-                  className={`min-h-[32px] cursor-pointer rounded-md border px-2.5 py-1 font-medium ${
+                  className={`min-h-[36px] cursor-pointer rounded-md border px-2.5 py-1 font-medium ${
                     prefs.theme === th
                       ? "border-[#1D4ED8] bg-[#1D4ED8] text-white"
                       : "border-current/20"
@@ -1343,14 +1365,14 @@ function ExamWorkspaceContent() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 lg:flex">
               <span className="font-semibold">Navigator side</span>
               {(["left", "right"] as const).map((side) => (
                 <button
                   key={side}
                   type="button"
                   onClick={() => updatePrefs({ ...prefs, navSide: side })}
-                  className={`min-h-[32px] cursor-pointer rounded-md border px-2.5 py-1 font-medium capitalize ${
+                  className={`min-h-[36px] cursor-pointer rounded-md border px-2.5 py-1 font-medium capitalize ${
                     prefs.navSide === side
                       ? "border-[#1D4ED8] bg-[#1D4ED8] text-white"
                       : "border-current/20"
@@ -1360,7 +1382,7 @@ function ExamWorkspaceContent() {
                 </button>
               ))}
             </div>
-            <label className="flex cursor-pointer items-center gap-1.5 font-medium">
+            <label className="hidden cursor-pointer items-center gap-1.5 font-medium lg:flex">
               <input
                 type="checkbox"
                 checked={prefs.compactNav}
@@ -1477,9 +1499,9 @@ function ExamWorkspaceContent() {
             </Link>
           </div>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-12">
+          <div className="grid gap-4 sm:gap-6 lg:grid-cols-12">
             <aside
-              className={`rounded-xl border p-4 ${navOrderClass} ${
+              className={`order-2 rounded-xl border p-4 ${navOrderClass} ${
                 prefs.compactNav ? "lg:col-span-3" : "lg:col-span-4"
               } ${cardBg}`}
             >
@@ -1555,7 +1577,7 @@ function ExamWorkspaceContent() {
             </aside>
 
             <section
-              className={`rounded-xl border p-6 ${mainOrderClass} ${
+              className={`order-1 rounded-xl border p-4 sm:p-6 ${mainOrderClass} ${
                 showScratchpad && !isLocked
                   ? "lg:col-span-5"
                   : prefs.compactNav
@@ -1739,12 +1761,12 @@ function ExamWorkspaceContent() {
                     </div>
                   )}
 
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-current/15 pt-4">
+                  <div className="mt-6 flex items-center justify-between gap-2 border-t border-current/15 pt-4">
                     <button
                       type="button"
                       disabled={activeIndex === 0 || isLocked}
                       onClick={() => goToQuestion(activeIndex - 1)}
-                      className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-sm font-medium disabled:opacity-40"
+                      className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3.5 py-2 text-sm font-medium disabled:opacity-40"
                     >
                       <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                       <span>Previous</span>
@@ -1756,7 +1778,7 @@ function ExamWorkspaceContent() {
                       type="button"
                       disabled={activeIndex === items.length - 1 || isLocked}
                       onClick={() => goToQuestion(activeIndex + 1)}
-                      className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-sm font-medium disabled:opacity-40"
+                      className="inline-flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3.5 py-2 text-sm font-medium disabled:opacity-40"
                     >
                       <span>Next</span>
                       <kbd className="hidden rounded-md border border-current/20 px-1.5 py-0.5 font-mono text-xs sm:inline">
@@ -1836,7 +1858,7 @@ function ExamWorkspaceContent() {
             aria-labelledby="review-submit-title"
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/45 p-4"
           >
-            <div className="w-full max-w-lg rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-6 text-[#0F172A]">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[rgba(15,23,42,0.14)] bg-white p-4 text-[#0F172A] sm:p-6">
               <h2
                 id="review-submit-title"
                 className="text-lg font-semibold text-[#0F172A]"
@@ -1880,7 +1902,7 @@ function ExamWorkspaceContent() {
                 </div>
               </dl>
 
-              <div className="mt-4 grid grid-cols-6 gap-2">
+              <div className="mt-4 grid grid-cols-5 gap-2 sm:grid-cols-6">
                 {items.map((item, idx) => {
                   const ans = answers[item.questionId];
                   const hasAnswer =
@@ -1913,21 +1935,21 @@ function ExamWorkspaceContent() {
                 })}
               </div>
 
-              <div className="mt-6 flex justify-end gap-2">
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => {
                     setShowReviewModal(false);
                     setError(null);
                   }}
-                  className="min-h-[40px] cursor-pointer rounded-lg border border-[rgba(15,23,42,0.14)] px-4 py-2 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                  className="min-h-[44px] w-full cursor-pointer rounded-lg border border-[rgba(15,23,42,0.14)] px-4 py-2 text-sm font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6] sm:min-h-[40px] sm:w-auto"
                 >
                   Back to exam
                 </button>
                 <button
                   type="button"
                   onClick={handleSubmitAttempt}
-                  className="min-h-[40px] cursor-pointer rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+                  className="min-h-[44px] w-full cursor-pointer rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF] sm:min-h-[40px] sm:w-auto"
                 >
                   {isSandbox ? "Exit sandbox" : "Confirm submission"}
                 </button>
