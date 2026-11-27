@@ -34,30 +34,6 @@ interface PreviewQuestion {
 const PREVIEW_QUESTIONS: PreviewQuestion[] = [
   {
     num: "01",
-    marks: 2,
-    title: "Server-enforced attempt deadline",
-    prompt: "Which timestamp governs automatic expiration when a client tab disconnects?",
-    options: [
-      "Server-persisted expiration timestamp computed at attempt start",
-      "Local browser countdown interval stored in memory",
-    ],
-    defaultSelected: 0,
-    initialState: "done",
-  },
-  {
-    num: "02",
-    marks: 2,
-    title: "Role isolation on grading routes",
-    prompt: "How does the backend prevent cross-examiner grading access?",
-    options: [
-      "Verify session role and exam ownership on every handler",
-      "Hide restricted buttons in the client navigation rail",
-    ],
-    defaultSelected: 0,
-    initialState: "done",
-  },
-  {
-    num: "03",
     marks: 3,
     title: "Immutable attempt snapshots",
     prompt:
@@ -70,19 +46,7 @@ const PREVIEW_QUESTIONS: PreviewQuestion[] = [
     initialState: "active",
   },
   {
-    num: "04",
-    marks: 3,
-    title: "Monotonic answer revision guard",
-    prompt: "Why does each saved response carry an incrementing revision integer?",
-    options: [
-      "Reject stale out-of-order network flushes without overwriting newer edits",
-      "Compress JSON payloads before local storage writes",
-    ],
-    defaultSelected: 0,
-    initialState: "review",
-  },
-  {
-    num: "05",
+    num: "02",
     marks: 4,
     title: "Privacy-preserving public verification",
     prompt: "Which fields appear on the public QR verification ledger?",
@@ -117,16 +81,11 @@ export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState<SafeUser | null>(() => getCachedSessionUser());
 
-  const [previewIdx, setPreviewIdx] = useState(2);
+  const [previewIdx, setPreviewIdx] = useState(0);
   const [previewChoice, setPreviewChoice] = useState<Record<number, number>>({
     0: 0,
-    1: 0,
-    2: 0,
-    3: 0,
   });
-  const [previewFlagged, setPreviewFlagged] = useState<Record<number, boolean>>({
-    3: true,
-  });
+  const [previewFlagged, setPreviewFlagged] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     fetchSessionUser().then((u) => setUser(u)).catch(() => {});
@@ -209,7 +168,7 @@ export default function PortalPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {user ? (
+            {user && (
               <>
                 <div className="text-right">
                   <p className="text-sm font-medium text-white lg:text-[#0F172A]">
@@ -228,13 +187,6 @@ export default function PortalPage() {
                   <span>Sign out</span>
                 </button>
               </>
-            ) : (
-              <Link
-                href="/login"
-                className="inline-flex min-h-[40px] items-center rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/20 lg:border-[rgba(15,23,42,0.14)] lg:bg-white lg:text-[#0F172A] lg:hover:bg-[#EEF2F6]"
-              >
-                Sign in
-              </Link>
             )}
           </div>
         </div>
@@ -416,7 +368,7 @@ export default function PortalPage() {
                   <span>
                     Question{" "}
                     <span className="font-mono tabular-nums text-white">
-                      {activePreview.num} / 05
+                      {activePreview.num} / {String(PREVIEW_QUESTIONS.length).padStart(2, "0")}
                     </span>
                   </span>
                   <span className="font-mono tabular-nums text-[#CBD5E1]">

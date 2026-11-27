@@ -1,7 +1,7 @@
 (() => {
   // Default target for the finished ExamGuard Next.js platform.
   // Override at runtime with ?app=https://your-examguard-url.example
-  const DEFAULT_PRODUCT_URL = "/portal";
+  const DEFAULT_PRODUCT_URL = "/login";
 
   const params = new URLSearchParams(window.location.search);
   const customAppUrl = params.get("app");
