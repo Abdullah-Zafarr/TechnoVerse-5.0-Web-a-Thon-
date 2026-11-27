@@ -46,3 +46,23 @@ Shared demo password: `demo1234`
 - **Core (3.1 to 3.8)**: Backend RBAC with per-user salted `scrypt` password hashes, exam lifecycle (`draft`, `published`, `ongoing`, `completed`), reusable question bank (create, edit, delete, MCQ/multi-select/written, randomization, rubrics), enrollment and window guards, auto-save and refresh recovery, live monitoring with non-conclusive disclaimers and announcements, auto/manual grading, and controlled result publication with breakdowns and exam summaries.
 - **Secondary (4.1 to 4.8)**: Network-aware sync status with retry, WinAnsi-safe multi-page PDF report and exam summary exports (`pdf-lib`), isolated examiner sandbox, CSV/JSON bulk import with validation (`papaparse`), per-question difficulty analytics and SVG score distribution, QR-verifiable reports (`qrcode`), persisted workspace preferences, and persisted text/canvas digital scratchpad.
 - **Innovation Module (Section 05)**: Modular grading and attempt extension hooks in `lib/grading.ts` and `app/exam/[examId]/page.tsx` are ready for Section 05 feature integration.
+
+## UI Screenshots
+
+### Sign-In and Role Portal
+![Sign-In and Role Portal](docs/screenshots/home.png)
+
+### Candidate Workspace
+![Candidate Workspace](docs/screenshots/candidate.png)
+
+### Timed Exam Delivery Runner
+![Timed Exam Delivery Runner](docs/screenshots/exam-runner.png)
+
+### Examiner Control Center
+![Examiner Control Center](docs/screenshots/examiner.png)
+
+### Administration Console
+![Administration Console](docs/screenshots/admin.png)
+
+### Public Report Verification
+![Public Report Verification](docs/screenshots/verify.png)
