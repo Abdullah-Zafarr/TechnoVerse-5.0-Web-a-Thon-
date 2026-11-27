@@ -403,13 +403,25 @@ h1 {
 
 /* Mobile & Tablet */
 @media (max-width: 900px) {
+  .site-header {
+    background-color: rgba(27, 42, 74, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--hairline-light);
+  }
+
+  .header-inner {
+    height: 60px;
+    padding-inline: max(16px, env(safe-area-inset-left));
+  }
+
   .brand-word {
     font-size: 21px;
   }
 
   .try-pill {
-    min-height: 38px;
-    padding: 9px 16px;
+    min-height: 44px;
+    padding: 10px 16px;
     font-size: 13px;
   }
 
@@ -418,18 +430,34 @@ h1 {
     min-height: 100dvh;
   }
 
+  .hero-bg-mesh {
+    width: 220px;
+    opacity: 0.45;
+  }
+
   .hero-inner {
     grid-template-columns: 1fr;
-    padding: 84px var(--gutter) 40px;
+    padding: 84px 20px 44px;
     gap: 28px;
   }
 
   .hero-left {
-    gap: 24px;
+    gap: 20px;
+    padding-top: 8px;
   }
 
   .hero-title {
-    font-size: clamp(4.8rem, 22vw, 8.2rem);
+    font-size: clamp(3.4rem, 17vw, 6.8rem);
+    line-height: 0.92;
+  }
+
+  .hero-word {
+    transform: none;
+  }
+
+  .hero-lead {
+    font-size: 16px;
+    max-width: 38ch;
   }
 
   .hero-right {
@@ -437,7 +465,7 @@ h1 {
   }
 
   .hero-emblem-svg {
-    max-height: 340px;
+    max-height: 300px;
   }
 
   .hero-stamp {
@@ -446,6 +474,41 @@ h1 {
     width: 96px;
     height: 96px;
     font-size: 15px;
+    transform: rotate(-6deg);
+  }
+}
+
+@media (max-width: 480px) {
+  .header-inner {
+    gap: 10px;
+  }
+
+  .try-pill {
+    padding: 10px 14px;
+    gap: 6px;
+  }
+
+  .hero-inner {
+    padding: 78px 16px 36px;
+    gap: 22px;
+  }
+
+  .hero-title {
+    font-size: clamp(3rem, 16.5vw, 4.6rem);
+  }
+
+  .hero-actions {
+    width: 100%;
+  }
+
+  .hero-cta {
+    width: 100%;
+    justify-content: center;
+    min-height: 48px;
+  }
+
+  .hero-emblem-svg {
+    max-height: 250px;
   }
 }
 
