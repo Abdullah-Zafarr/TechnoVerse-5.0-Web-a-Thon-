@@ -13,6 +13,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/portal",
+        destination: "/login",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {
