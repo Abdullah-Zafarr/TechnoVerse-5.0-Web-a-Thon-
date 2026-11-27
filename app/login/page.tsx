@@ -147,7 +147,7 @@ export default function LoginPage() {
         }}
       />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-[1060px] shrink-0 items-center justify-between gap-2 px-4 pt-5 sm:px-6">
+      <header className="relative z-10 mx-auto flex w-full max-w-[1140px] shrink-0 items-center justify-between gap-2 px-4 pt-5 sm:px-6">
         <a
           href="/"
           className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-3.5 py-2 text-xs font-medium text-[#E2E8F0] backdrop-blur-md transition-colors hover:bg-white/[0.12] hover:text-white"
@@ -166,10 +166,10 @@ export default function LoginPage() {
 
       <main
         id="main-content"
-        className="relative z-10 mx-auto flex w-full max-w-[1060px] flex-1 items-center px-4 py-6 pb-10 sm:px-6 lg:py-4"
+        className="relative z-10 mx-auto flex w-full max-w-[1140px] flex-1 items-center px-4 py-6 pb-10 sm:px-6 lg:py-4"
       >
         <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-12 lg:items-center lg:gap-8">
-          <div className="space-y-4 lg:col-span-6">
+          <div className="space-y-4 lg:col-span-5">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[32px]">
                 Sign in to <span className="text-[#38BDF8]">ExamGuard</span>
@@ -231,14 +231,14 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="lg:col-span-6">
-            <div className="rounded-2xl border border-white/15 bg-gradient-to-b from-[#0E2148]/85 to-[#081533]/90 p-6 shadow-[0_20px_56px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:p-7">
-              <h2 className="text-base font-semibold text-white">
+          <div className="lg:col-span-7">
+            <div className="rounded-2xl border border-white/15 bg-gradient-to-b from-[#0E2148]/85 to-[#081533]/90 p-7 shadow-[0_20px_56px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:p-10">
+              <h2 className="text-xl font-semibold text-white">
                 Sign in with credentials
               </h2>
-              <p className="mt-1 text-xs text-[#94A3B8]">
+              <p className="mt-1.5 text-sm text-[#94A3B8]">
                 Demo password{" "}
-                <code className="ml-1 rounded-md border border-white/10 bg-white/10 px-2 py-0.5 font-mono text-[11px] text-[#E2E8F0]">
+                <code className="ml-1 rounded-md border border-white/10 bg-white/10 px-2 py-0.5 font-mono text-xs text-[#E2E8F0]">
                   demo1234
                 </code>
               </p>
@@ -246,18 +246,18 @@ export default function LoginPage() {
               {error && (
                 <div
                   role="alert"
-                  className="mt-3.5 flex items-center gap-2 rounded-lg border border-[#FCA5A5]/40 bg-[#7F1D1D]/60 p-3 text-xs text-[#FEE2E2]"
+                  className="mt-4 flex items-center gap-2 rounded-lg border border-[#FCA5A5]/40 bg-[#7F1D1D]/60 p-3 text-xs text-[#FEE2E2]"
                 >
                   <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <span>{error}</span>
                 </div>
               )}
 
-              <form onSubmit={handleLogin} className="mt-4 space-y-4" noValidate>
+              <form onSubmit={handleLogin} className="mt-6 space-y-5" noValidate>
                 <div>
                   <label
                     htmlFor="login-email"
-                    className="block text-xs font-medium text-[#CBD5E1]"
+                    className="block text-sm font-medium text-[#CBD5E1]"
                   >
                     Email address
                   </label>
@@ -271,7 +271,7 @@ export default function LoginPage() {
                       setEmail(e.target.value);
                       if (emailError) validateEmailField(e.target.value);
                     }}
-                    className="mt-1.5 min-h-[42px] w-full rounded-lg border border-[#38BDF8]/40 bg-[#07132C]/85 px-3.5 py-2 text-sm text-white placeholder-[#64748B] shadow-[0_0_0_1px_rgba(56,189,248,0.12)] transition-all focus:border-[#0EA5E9] focus:ring-2 focus:ring-[#0EA5E9]/30 focus:outline-none"
+                    className="mt-2 min-h-[48px] w-full rounded-lg border border-[#38BDF8]/40 bg-[#07132C]/85 px-4 py-2.5 text-base text-white placeholder-[#64748B] shadow-[0_0_0_1px_rgba(56,189,248,0.12)] transition-all focus:border-[#0EA5E9] focus:ring-2 focus:ring-[#0EA5E9]/30 focus:outline-none"
                   />
                   {emailError && (
                     <p className="mt-1 text-xs text-[#FCA5A5]">{emailError}</p>
@@ -280,7 +280,7 @@ export default function LoginPage() {
                 <div>
                   <label
                     htmlFor="login-password"
-                    className="block text-xs font-medium text-[#CBD5E1]"
+                    className="block text-sm font-medium text-[#CBD5E1]"
                   >
                     Password
                   </label>
@@ -290,13 +290,13 @@ export default function LoginPage() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="mt-1.5 min-h-[42px] w-full rounded-lg border border-white/15 bg-[#07132C]/85 px-3.5 py-2 text-sm text-white placeholder-[#64748B] transition-all focus:border-[#0EA5E9] focus:ring-2 focus:ring-[#0EA5E9]/30 focus:outline-none"
+                    className="mt-2 min-h-[48px] w-full rounded-lg border border-white/15 bg-[#07132C]/85 px-4 py-2.5 text-base text-white placeholder-[#64748B] transition-all focus:border-[#0EA5E9] focus:ring-2 focus:ring-[#0EA5E9]/30 focus:outline-none"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="min-h-[44px] w-full cursor-pointer rounded-lg bg-gradient-to-r from-[#0284C7] via-[#0EA5E9] to-[#0284C7] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_6px_24px_rgba(14,165,233,0.45)] transition-all hover:brightness-110 disabled:opacity-60"
+                  className="mt-1 min-h-[50px] w-full cursor-pointer rounded-lg bg-gradient-to-r from-[#0284C7] via-[#0EA5E9] to-[#0284C7] px-5 py-3 text-base font-semibold text-white shadow-[0_6px_24px_rgba(14,165,233,0.45)] transition-all hover:brightness-110 disabled:opacity-60"
                 >
                   {loading ? "Signing in..." : "Sign in"}
                 </button>
