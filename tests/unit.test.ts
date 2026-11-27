@@ -10,10 +10,18 @@ import {
 } from "../lib/auth";
 import {
   buildAttemptSnapshots,
+  computeAutoPauseCredit,
   computeExamAnalytics,
   computeStratifiedQuotas,
+  getAttemptAutoPauseCapMs,
   gradeObjectiveItem,
+  shouldAutoExpireAttempt,
 } from "../lib/grading";
+import {
+  parseImportRows,
+  validateCandidateRows,
+  validateQuestionRows,
+} from "../lib/importParser";
 import { sanitizePdfFilename, sanitizePdfText, wrapPdfText } from "../lib/pdf";
 import type { AttemptItemSnapshot, SafeUser } from "../lib/types";
 import {
@@ -363,5 +371,185 @@ test("grading & validation: stratified quotas and announcement bounds", () => {
       message: "x".repeat(501),
     }).success,
     false
+  );
+});
+
+test("importParser: handles CSV BOM, blank optional cells, written rows, and malformed CSV rows", () => {
+  const csv = [
+    "\uFEFFtitle,prompt,type,topic,difficulty,marks,options,correct,rubric",
+    "Defaults Q,Pick one,,,, ,Alpha|Beta,1,",
+    "Written Q,Explain CAP theorem.,written,Distributed,hard,5",
+    "Broken Q,Too,many,commas,here,2,A|B,1,rubric,extra",
+  ].join("\n");
+
+  const parsed = parseImportRows("csv", csv, "questions");
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  const res = validateQuestionRows(parsed.rows, parsed.badRowIndices);
+  const allErrors = [...parsed.errors, ...res.errors];
+
+  assert.equal(res.validQuestions.length, 2);
+  assert.equal(res.validQuestions[0].type, "single_mcq");
+  assert.equal(res.validQuestions[0].topic, "Imported");
+  assert.equal(res.validQuestions[0].difficulty, "medium");
+  assert.equal(res.validQuestions[0].marks, 2);
+  assert.equal(res.validQuestions[1].type, "written");
+  assert.equal(res.validQuestions[1].options.length, 0);
+  assert.equal(allErrors.length, 1);
+  assert.match(allErrors[0], /CSV line 3/i);
+});
+
+test("importParser: handles JSON option objects, correctOptionIds, wrapped arrays, and candidate aliases", () => {
+  const jsonQuestions = JSON.stringify({
+    questions: [
+      {
+        title: "Structured JSON Q",
+        prompt: "Select valid controls.",
+        type: "multi_select",
+        topic: "Security",
+        difficulty: "HARD",
+        marks: 4,
+        partialCredit: false,
+        options: [
+          { id: "o1", text: "Server RBAC" },
+          { id: "o2", text: "CSS hide" },
+          { id: "o3", text: "Signed cookie" },
+        ],
+        correctOptionIds: ["o1", "o3"],
+      },
+      {
+        title: "Comma indices Q",
+        prompt: "Pick 1 and 2.",
+        type: "multi_select",
+        options: ["First", "Second", "Third"],
+        correct: "1, 2",
+      },
+      {
+        title: "Bad index Q",
+        prompt: "Out of bounds",
+        type: "single_mcq",
+        options: ["A", "B"],
+        correct: 5,
+      },
+    ],
+  });
+
+  const parsedQ = parseImportRows("json", `\uFEFF${jsonQuestions}`, "questions");
+  assert.equal(parsedQ.ok, true);
+  if (!parsedQ.ok) return;
+
+  const validatedQ = validateQuestionRows(parsedQ.rows, parsedQ.badRowIndices);
+  assert.equal(validatedQ.validQuestions.length, 2);
+  assert.equal(validatedQ.validQuestions[0].difficulty, "hard");
+  assert.equal(validatedQ.validQuestions[0].partialCredit, false);
+  assert.deepEqual(validatedQ.validQuestions[0].correctOptionIds, ["o1", "o3"]);
+  assert.deepEqual(validatedQ.validQuestions[1].correctOptionIds, ["o1", "o2"]);
+  assert.equal(validatedQ.errors.length, 1);
+
+  const parsedC = parseImportRows(
+    "json",
+    JSON.stringify([
+      { full_name: "Ali Raza", email_address: "ALI@EXAMPLE.EDU" },
+      { name: "Bad Email", email: "not-an-email" },
+    ]),
+    "candidates"
+  );
+  assert.equal(parsedC.ok, true);
+  if (!parsedC.ok) return;
+  const validatedC = validateCandidateRows(parsedC.rows, parsedC.badRowIndices);
+  assert.equal(validatedC.validCandidates.length, 1);
+  assert.equal(validatedC.validCandidates[0].email, "ali@example.edu");
+  assert.equal(validatedC.errors.length, 1);
+});
+
+test("outage resilience: getAttemptAutoPauseCapMs and computeAutoPauseCredit enforce bounded server credit", () => {
+  assert.equal(getAttemptAutoPauseCapMs(1), 60_000);
+  assert.equal(getAttemptAutoPauseCapMs(15), 225_000);
+  assert.equal(getAttemptAutoPauseCapMs(60), 300_000);
+
+  const baseExp = 1_000_000;
+  // Normal 8s heartbeat jitter does not credit extra time
+  const normal = computeAutoPauseCredit({
+    nowMs: baseExp - 60_000,
+    lastHeartbeatAtMs: baseExp - 68_000,
+    serverExpiresAtMs: baseExp,
+    autoPausedMs: 0,
+    capMs: 300_000,
+  });
+  assert.equal(normal.creditedMs, 0);
+  assert.equal(normal.newExpiresAtMs, baseExp);
+
+  // 30s outage credits 25s (30s - 5s heartbeat interval)
+  const outage = computeAutoPauseCredit({
+    nowMs: baseExp - 30_000,
+    lastHeartbeatAtMs: baseExp - 60_000,
+    serverExpiresAtMs: baseExp,
+    autoPausedMs: 0,
+    capMs: 300_000,
+  });
+  assert.equal(outage.creditedMs, 25_000);
+  assert.equal(outage.newExpiresAtMs, baseExp + 25_000);
+  assert.equal(outage.newAutoPausedMs, 25_000);
+
+  // Remaining cap clamps large outage gaps
+  const capped = computeAutoPauseCredit({
+    nowMs: baseExp + 100_000,
+    lastHeartbeatAtMs: baseExp - 20_000,
+    serverExpiresAtMs: baseExp,
+    autoPausedMs: 280_000,
+    capMs: 300_000,
+  });
+  assert.equal(capped.creditedMs, 20_000);
+  assert.equal(capped.newExpiresAtMs, baseExp + 20_000);
+  assert.equal(capped.remainingCapMs, 0);
+
+  // No credit if heartbeat was already past deadline
+  const late = computeAutoPauseCredit({
+    nowMs: baseExp + 40_000,
+    lastHeartbeatAtMs: baseExp + 5_000,
+    serverExpiresAtMs: baseExp,
+    autoPausedMs: 0,
+    capMs: 300_000,
+  });
+  assert.equal(late.creditedMs, 0);
+});
+
+test("outage resilience: shouldAutoExpireAttempt holds mid-outage attempts only within cap", () => {
+  const exp = 1_000_000;
+  // Online candidate expires immediately at serverExpiresAt
+  assert.equal(
+    shouldAutoExpireAttempt({
+      nowMs: exp + 1_000,
+      lastHeartbeatAtMs: exp - 3_000,
+      serverExpiresAtMs: exp,
+      autoPausedMs: 0,
+      durationMinutes: 60,
+    }),
+    true
+  );
+
+  // Disconnected candidate within 5 min cap is held past serverExpiresAt
+  assert.equal(
+    shouldAutoExpireAttempt({
+      nowMs: exp + 60_000,
+      lastHeartbeatAtMs: exp - 10_000,
+      serverExpiresAtMs: exp,
+      autoPausedMs: 0,
+      durationMinutes: 60,
+    }),
+    false
+  );
+
+  // Disconnected candidate past serverExpiresAt + remaining cap expires
+  assert.equal(
+    shouldAutoExpireAttempt({
+      nowMs: exp + 301_000,
+      lastHeartbeatAtMs: exp - 10_000,
+      serverExpiresAtMs: exp,
+      autoPausedMs: 0,
+      durationMinutes: 60,
+    }),
+    true
   );
 });

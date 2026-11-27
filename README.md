@@ -87,12 +87,13 @@ Seeded verification codes for `/verify`: `EG-DEMO2026`, `EG-SANA2026`.
 - **Trade-off**: Stratification balances difficulty counts while preserving variation across candidates; it does not equalize total marks if questions inside the same difficulty tier carry unequal mark weights, so examiners should keep mark weights consistent within each tier.
 
 ### 5.3 Failure-Resilient Examinations
-- **Problem**: Campus Wi-Fi drops, power cuts, and tab crashes lose unsaved work, while naive client-side timers let candidates manufacture extra time offline.
+- **Problem**: Network drops, request timeouts, and power cuts cost candidates exam time and unsaved work, while naive client-side pauses let candidates gain free thinking time on questions or manufacture extra hours offline.
 - **Design**:
   1. **Local-first persistence (`lib/offlineQueue.ts`)**: Unsynced answer deltas persist in IndexedDB with a synchronous `localStorage` crash mirror and replay automatically on reconnect.
   2. **Monotonic revision guard (`app/api/attempts/[id]/answer/route.ts`)**: Every answer edit increments a per-question revision integer. Out-of-order replays never overwrite newer server state; stale writes log a `sync_conflict` signal and return the winning server version.
-  3. **Server-authoritative deadline + audited outage grace (`app/api/attempts/[id]/grace/route.ts`)**: The server enforces `serverExpiresAt` independently of client clocks. When an outage is verified, only an examiner or administrator can grant a bounded extension (1–30 minutes) with a mandatory reason, reopening auto-expired attempts while keeping submitted attempts permanently locked and writing both an `Incident` and `AuditLog` entry.
-- **Trade-off**: Candidates cannot self-pause timers offline (preventing abuse), which places verified outage recovery under explicit, auditable examiner control.
+  3. **Full workspace lock + server-bounded auto-pause (`app/exam/[examId]/page.tsx`, `app/api/attempts/[id]/heartbeat/route.ts`, `lib/grading.ts`)**: When `navigator.onLine` drops or a heartbeat/sync request times out, the workspace hides the active question, disables all inputs and question navigation, and pauses the visible timer. On reconnect, the server measures the gap from `lastHeartbeatAt` and extends `serverExpiresAt` up to a strict per-attempt cap (`min(5 min, max(1 min, 25% of exam duration))`), logging each event as an `offline_gap` `Incident`.
+  4. **Audited examiner grace (`app/api/attempts/[id]/grace/route.ts`)**: Once the auto-pause cap is exhausted or an outage exceeds it, only an examiner or administrator can grant a bounded manual extension (1–30 minutes) with a mandatory reason, reopening auto-expired attempts while keeping submitted attempts permanently locked and writing both an `Incident` and `AuditLog` entry.
+- **Trade-off**: Hiding the active question during disconnects removes the free-time exploit on both the current question and other questions, at the cost of requiring candidates to wait for reconnect before continuing.
 
 ## Case Study Analysis & Constraints
 

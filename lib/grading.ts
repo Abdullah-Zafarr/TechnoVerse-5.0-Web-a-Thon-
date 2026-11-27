@@ -277,16 +277,258 @@ export async function finalizeAttemptInTx(
   return attempt;
 }
 
+export const HEARTBEAT_INTERVAL_MS = 5_000;
+export const OUTAGE_THRESHOLD_MS = 12_000;
+export const MAX_AUTO_PAUSE_MS = 5 * 60_000;
+
+/**
+ * Returns the maximum cumulative milliseconds that can be auto-credited
+ * for connection outages on an attempt (bounded at 5 min, or 25% of duration
+ * with a 1 min floor for short exams).
+ */
+export function getAttemptAutoPauseCapMs(durationMinutes: number): number {
+  return Math.min(
+    MAX_AUTO_PAUSE_MS,
+    Math.max(60_000, Math.floor(durationMinutes * 60_000 * 0.25))
+  );
+}
+
+/**
+ * Computes bounded server-side outage credit strictly from server timestamps.
+ * Credits time only when a real gap (> OUTAGE_THRESHOLD_MS) occurs after a
+ * heartbeat that was alive before the prior server deadline.
+ */
+export function computeAutoPauseCredit(params: {
+  nowMs: number;
+  lastHeartbeatAtMs: number;
+  serverExpiresAtMs: number;
+  autoPausedMs: number;
+  capMs: number;
+}): {
+  creditedMs: number;
+  newExpiresAtMs: number;
+  newAutoPausedMs: number;
+  remainingCapMs: number;
+} {
+  const { nowMs, lastHeartbeatAtMs, serverExpiresAtMs, autoPausedMs, capMs } =
+    params;
+  const remainingCapMs = Math.max(0, capMs - autoPausedMs);
+  const gapMs = nowMs - lastHeartbeatAtMs;
+
+  if (
+    lastHeartbeatAtMs >= serverExpiresAtMs ||
+    gapMs <= OUTAGE_THRESHOLD_MS ||
+    remainingCapMs <= 0
+  ) {
+    return {
+      creditedMs: 0,
+      newExpiresAtMs: serverExpiresAtMs,
+      newAutoPausedMs: autoPausedMs,
+      remainingCapMs,
+    };
+  }
+
+  const rawCreditMs = Math.max(0, gapMs - HEARTBEAT_INTERVAL_MS);
+  const creditedMs = Math.min(rawCreditMs, remainingCapMs);
+  return {
+    creditedMs,
+    newExpiresAtMs: serverExpiresAtMs + creditedMs,
+    newAutoPausedMs: autoPausedMs + creditedMs,
+    remainingCapMs: remainingCapMs - creditedMs,
+  };
+}
+
+/**
+ * Determines whether an in-progress attempt should be auto-expired at `now`,
+ * holding off up to its remaining auto-pause cap when a mid-exam outage is
+ * still in progress.
+ */
+export function shouldAutoExpireAttempt(params: {
+  nowMs: number;
+  lastHeartbeatAtMs: number;
+  serverExpiresAtMs: number;
+  autoPausedMs: number;
+  durationMinutes: number;
+}): boolean {
+  const {
+    nowMs,
+    lastHeartbeatAtMs,
+    serverExpiresAtMs,
+    autoPausedMs,
+    durationMinutes,
+  } = params;
+  if (nowMs < serverExpiresAtMs) return false;
+  const capMs = getAttemptAutoPauseCapMs(durationMinutes);
+  const remainingCapMs = Math.max(0, capMs - autoPausedMs);
+  const inOutageHold =
+    nowMs - lastHeartbeatAtMs > OUTAGE_THRESHOLD_MS &&
+    lastHeartbeatAtMs < serverExpiresAtMs;
+  const effectiveDeadlineMs =
+    serverExpiresAtMs + (inOutageHold ? remainingCapMs : 0);
+  return nowMs >= effectiveDeadlineMs;
+}
+
+export type ReconcileHeartbeatResult =
+  | { kind: "not_found" }
+  | { kind: "already_finalized"; status: Attempt["status"] }
+  | {
+      kind: "expired";
+      serverExpiresAt: Date;
+      autoPausedMs: number;
+      capMs: number;
+    }
+  | {
+      kind: "ok";
+      now: Date;
+      serverExpiresAt: Date;
+      autoPausedMs: number;
+      capMs: number;
+      creditedMs: number;
+    };
+
+/**
+ * Atomically records a candidate heartbeat inside a transaction, applying
+ * bounded server-side outage credit if a connection gap exceeded the threshold.
+ * Uses optimistic matching on lastHeartbeatAt so concurrent calls never double-credit.
+ */
+export async function reconcileAttemptHeartbeatInTx(
+  tx: Prisma.TransactionClient,
+  attemptId: string,
+  now: Date
+): Promise<ReconcileHeartbeatResult> {
+  const attempt = await tx.attempt.findUnique({
+    where: { id: attemptId },
+    include: { exam: { select: { durationMinutes: true } } },
+  });
+  if (!attempt) return { kind: "not_found" };
+  if (attempt.status !== "in_progress") {
+    return { kind: "already_finalized", status: attempt.status };
+  }
+
+  const capMs = getAttemptAutoPauseCapMs(attempt.exam.durationMinutes);
+  const credit = computeAutoPauseCredit({
+    nowMs: now.getTime(),
+    lastHeartbeatAtMs: attempt.lastHeartbeatAt.getTime(),
+    serverExpiresAtMs: attempt.serverExpiresAt.getTime(),
+    autoPausedMs: attempt.autoPausedMs,
+    capMs,
+  });
+
+  if (now.getTime() >= credit.newExpiresAtMs) {
+    return {
+      kind: "expired",
+      serverExpiresAt: attempt.serverExpiresAt,
+      autoPausedMs: attempt.autoPausedMs,
+      capMs,
+    };
+  }
+
+  const newExpiresAt = new Date(credit.newExpiresAtMs);
+  const claimed = await tx.attempt.updateMany({
+    where: {
+      id: attempt.id,
+      status: "in_progress",
+      lastHeartbeatAt: attempt.lastHeartbeatAt,
+    },
+    data: {
+      lastHeartbeatAt: now,
+      ...(credit.creditedMs > 0
+        ? {
+            serverExpiresAt: newExpiresAt,
+            autoPausedMs: credit.newAutoPausedMs,
+          }
+        : {}),
+    },
+  });
+
+  if (claimed.count === 0) {
+    const latest = await tx.attempt.findUnique({
+      where: { id: attempt.id },
+      select: { status: true, serverExpiresAt: true, autoPausedMs: true },
+    });
+    if (!latest) return { kind: "not_found" };
+    if (latest.status !== "in_progress") {
+      return { kind: "already_finalized", status: latest.status };
+    }
+    if (now.getTime() >= latest.serverExpiresAt.getTime()) {
+      return {
+        kind: "expired",
+        serverExpiresAt: latest.serverExpiresAt,
+        autoPausedMs: latest.autoPausedMs,
+        capMs,
+      };
+    }
+    return {
+      kind: "ok",
+      now,
+      serverExpiresAt: latest.serverExpiresAt,
+      autoPausedMs: latest.autoPausedMs,
+      capMs,
+      creditedMs: 0,
+    };
+  }
+
+  if (credit.creditedMs > 0) {
+    const creditedSec = Math.max(1, Math.round(credit.creditedMs / 1000));
+    const totalSec = Math.round(credit.newAutoPausedMs / 1000);
+    const capSec = Math.round(capMs / 1000);
+    await tx.incident.create({
+      data: {
+        attemptId: attempt.id,
+        type: "offline_gap",
+        detail: `Auto-paused ${creditedSec}s during outage (${totalSec}s / ${capSec}s cap); deadline extended.`.slice(
+          0,
+          240
+        ),
+      },
+    });
+  }
+
+  return {
+    kind: "ok",
+    now,
+    serverExpiresAt: newExpiresAt,
+    autoPausedMs: credit.newAutoPausedMs,
+    capMs,
+    creditedMs: credit.creditedMs,
+  };
+}
+
+export async function reconcileAttemptHeartbeat(
+  attemptId: string,
+  now = new Date()
+): Promise<ReconcileHeartbeatResult> {
+  return prisma.$transaction(
+    (tx) => reconcileAttemptHeartbeatInTx(tx, attemptId, now),
+    { maxWait: 10_000, timeout: 15_000 }
+  );
+}
+
 export async function expireStaleAttempts(examId?: string): Promise<void> {
   const now = new Date();
-  const stale = await prisma.attempt.findMany({
+  const inProgress = await prisma.attempt.findMany({
     where: {
       ...(examId ? { examId } : {}),
       status: "in_progress",
       serverExpiresAt: { lte: now },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      lastHeartbeatAt: true,
+      serverExpiresAt: true,
+      autoPausedMs: true,
+      exam: { select: { durationMinutes: true } },
+    },
   });
+  const stale = inProgress.filter((att) =>
+    shouldAutoExpireAttempt({
+      nowMs: now.getTime(),
+      lastHeartbeatAtMs: att.lastHeartbeatAt.getTime(),
+      serverExpiresAtMs: att.serverExpiresAt.getTime(),
+      autoPausedMs: att.autoPausedMs,
+      durationMinutes: att.exam.durationMinutes,
+    })
+  );
   await Promise.all(
     stale.map((att) => finalizeAttemptInTx(att.id, "expired"))
   );

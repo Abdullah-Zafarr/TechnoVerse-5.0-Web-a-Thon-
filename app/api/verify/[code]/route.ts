@@ -16,12 +16,13 @@ export async function GET(
 ) {
   const { code } = await params;
   const attempt = await prisma.attempt.findFirst({
+    relationLoadStrategy: "join",
     where: {
       verificationCode: { equals: code, mode: "insensitive" },
     },
     include: {
-      exam: true,
-      candidate: true,
+      exam: { select: { code: true, title: true, resultsPublished: true } },
+      candidate: { select: { name: true } },
     },
   });
 

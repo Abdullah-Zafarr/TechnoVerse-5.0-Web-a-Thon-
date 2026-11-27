@@ -1,8 +1,13 @@
-import Papa from "papaparse";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { canManageExam, hashPassword, requireRole } from "@/lib/auth";
+import {
+  parseImportRows,
+  validateCandidateRows,
+  validateQuestionRows,
+} from "@/lib/importParser";
 import { prisma } from "@/lib/prisma";
+import { invalidateCacheTags } from "@/lib/serverCache";
 import type { Difficulty, QuestionType } from "@/lib/types";
 import { safeParseJson } from "@/lib/validation";
 
@@ -25,19 +30,6 @@ class ImportExamConflictError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-interface ValidatedQuestionRow {
-  title: string;
-  prompt: string;
-  type: QuestionType;
-  topic: string;
-  difficulty: Difficulty;
-  marks: number;
-  partialCredit: boolean;
-  options: Array<{ id: string; text: string }>;
-  correctOptionIds: string[];
-  rubric: string | null;
 }
 
 export async function POST(req: Request) {
@@ -83,164 +75,21 @@ export async function POST(req: Request) {
     }
   }
 
-  let rows: Array<Record<string, string> | null> = [];
-  const errors: string[] = [];
-
-  if (format === "json") {
-    try {
-      const parsed = JSON.parse(content) as unknown;
-      if (!Array.isArray(parsed)) {
-        return NextResponse.json(
-          { error: "JSON payload must be an array of records" },
-          { status: 400 }
-        );
-      }
-      rows = parsed.map((item) => {
-        if (typeof item !== "object" || item === null || Array.isArray(item)) {
-          return null;
-        }
-        const out: Record<string, string> = {};
-        for (const [k, v] of Object.entries(item)) {
-          out[k.toLowerCase()] = Array.isArray(v)
-            ? v.join("|")
-            : String(v ?? "");
-        }
-        return out;
-      });
-    } catch {
-      return NextResponse.json({ error: "Invalid JSON syntax" }, { status: 400 });
-    }
-  } else {
-    const csv = Papa.parse<Record<string, string>>(content, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.trim().toLowerCase(),
-    });
-    if (csv.errors.length > 0) {
-      csv.errors.forEach((e) => {
-        errors.push(`CSV line ${(e.row ?? 0) + 1}: ${e.message}`);
-      });
-    }
-    rows = csv.data;
-  }
-
-  if (rows.length === 0) {
+  const parsedInput = parseImportRows(format, content, kind);
+  if (!parsedInput.ok) {
     return NextResponse.json(
-      { error: "No data rows found in import input", errors },
-      { status: 400 }
+      { error: parsedInput.error, errors: parsedInput.errors },
+      { status: parsedInput.status }
     );
   }
 
+  const { rows, badRowIndices, errors } = parsedInput;
   let importedCount = 0;
 
   if (kind === "questions") {
-    const validQuestions: ValidatedQuestionRow[] = [];
-
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index];
-      const rowNum = index + 1;
-      if (!row) {
-        errors.push(`Row ${rowNum}: record must be a JSON object`);
-        continue;
-      }
-
-      const title = (row.title ?? "").trim();
-      const prompt = (row.prompt ?? "").trim();
-      const type = (row.type ?? "single_mcq").trim() as QuestionType;
-      const topic = (row.topic ?? "Imported").trim() || "Imported";
-      const difficulty = (row.difficulty ?? "medium").trim() as Difficulty;
-      const marks = Number(row.marks ?? 2);
-      const rubric = (row.rubric ?? "").trim();
-
-      if (!title || !prompt) {
-        errors.push(`Row ${rowNum}: missing title or prompt`);
-        continue;
-      }
-      if (!["single_mcq", "multi_select", "written"].includes(type)) {
-        errors.push(`Row ${rowNum}: invalid type '${type}'`);
-        continue;
-      }
-      if (!["easy", "medium", "hard"].includes(difficulty)) {
-        errors.push(`Row ${rowNum}: invalid difficulty '${difficulty}'`);
-        continue;
-      }
-      if (!Number.isFinite(marks) || marks <= 0 || marks > 100) {
-        errors.push(`Row ${rowNum}: marks must be between 1 and 100`);
-        continue;
-      }
-
-      const rawOpts = (row.options ?? "")
-        .split("|")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const rawCorrect = (row.correct ?? "")
-        .split("|")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      if (
-        type !== "written" &&
-        (rawOpts.length < 2 || rawCorrect.length === 0)
-      ) {
-        errors.push(
-          `Row ${rowNum}: objective questions need pipe-separated options and correct 1-based indices`
-        );
-        continue;
-      }
-
-      if (type === "single_mcq" && rawCorrect.length !== 1) {
-        errors.push(
-          `Row ${rowNum}: single_mcq requires exactly 1 valid correct index`
-        );
-        continue;
-      }
-
-      const options = rawOpts.map((text, idx) => ({ id: `o${idx + 1}`, text }));
-      const mappedCorrect: string[] = [];
-      let hasInvalidIndex = false;
-
-      if (type !== "written") {
-        for (const idxStr of rawCorrect) {
-          const parsedIdx = Number(idxStr);
-          if (
-            !Number.isInteger(parsedIdx) ||
-            parsedIdx < 1 ||
-            parsedIdx > options.length
-          ) {
-            hasInvalidIndex = true;
-            break;
-          }
-          mappedCorrect.push(options[parsedIdx - 1].id);
-        }
-      }
-
-      if (hasInvalidIndex) {
-        errors.push(`Row ${rowNum}: correct option index out of range`);
-        continue;
-      }
-
-      const correctOptionIds = Array.from(new Set(mappedCorrect));
-      if (
-        type !== "written" &&
-        correctOptionIds.length !== rawCorrect.length
-      ) {
-        errors.push(`Row ${rowNum}: duplicate correct option index`);
-        continue;
-      }
-
-      validQuestions.push({
-        title,
-        prompt,
-        type,
-        topic,
-        difficulty,
-        marks,
-        partialCredit: type === "multi_select",
-        options: type === "written" ? [] : options,
-        correctOptionIds: type === "written" ? [] : correctOptionIds,
-        rubric: type === "written" ? rubric || null : null,
-      });
-    }
+    const validated = validateQuestionRows(rows, badRowIndices);
+    errors.push(...validated.errors);
+    const { validQuestions } = validated;
 
     if (validQuestions.length > 0) {
       try {
@@ -328,27 +177,17 @@ export async function POST(req: Request) {
       }
     }
   } else {
+    const validated = validateCandidateRows(rows, badRowIndices);
+    errors.push(...validated.errors);
     const defaultPwd = hashPassword("demo1234");
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index];
-      const rowNum = index + 1;
-      if (!row) {
-        errors.push(`Row ${rowNum}: record must be a JSON object`);
-        continue;
-      }
 
-      const name = (row.name ?? "").trim();
-      const email = (row.email ?? "").trim().toLowerCase();
-
-      if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        errors.push(`Row ${rowNum}: valid name and email required`);
-        continue;
-      }
-
-      const existingUser = await prisma.user.findUnique({ where: { email } });
+    for (const candidate of validated.validCandidates) {
+      const existingUser = await prisma.user.findUnique({
+        where: { email: candidate.email },
+      });
       if (existingUser && existingUser.role !== "candidate") {
         errors.push(
-          `Row ${rowNum}: email belongs to staff account and cannot be imported as candidate`
+          `Row ${candidate.rowNum}: email belongs to staff account and cannot be imported as candidate`
         );
         continue;
       }
@@ -357,8 +196,8 @@ export async function POST(req: Request) {
         existingUser ??
         (await prisma.user.create({
           data: {
-            name,
-            email,
+            name: candidate.name,
+            email: candidate.email,
             passwordHash: defaultPwd,
             role: "candidate",
             active: true,
@@ -366,21 +205,31 @@ export async function POST(req: Request) {
         }));
 
       if (examId) {
-        await prisma.enrollment
-          .upsert({
+        try {
+          await prisma.enrollment.upsert({
             where: {
               examId_candidateId: { examId, candidateId: user.id },
             },
             update: {},
             create: { examId, candidateId: user.id },
-          })
-          .catch(() => {});
+          });
+        } catch {
+          errors.push(
+            `Row ${candidate.rowNum}: failed to enroll '${candidate.email}' in target exam`
+          );
+          continue;
+        }
       }
       importedCount++;
     }
   }
 
   if (importedCount > 0) {
+    if (kind === "questions") {
+      invalidateCacheTags("questions", "exams", "grading", "monitor");
+    } else {
+      invalidateCacheTags("users", "exams", "grading", "monitor");
+    }
     await prisma.auditLog.create({
       data: {
         actorId: auth.user.id,

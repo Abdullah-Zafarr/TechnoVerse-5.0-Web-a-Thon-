@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
-import { finalizeAttemptInTx } from "@/lib/grading";
+import {
+  finalizeAttemptInTx,
+  reconcileAttemptHeartbeatInTx,
+} from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import { broadcastExamEvent } from "@/lib/realtime";
+import { invalidateCacheTags } from "@/lib/serverCache";
 import type { AttemptItemSnapshot } from "@/lib/types";
 import { answerUpdateSchema, safeParseJson } from "@/lib/validation";
 
@@ -34,18 +38,6 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const now = new Date();
-  if (attempt.status === "in_progress" && now > attempt.serverExpiresAt) {
-    await finalizeAttemptInTx(attempt.id, "expired");
-    return NextResponse.json(
-      {
-        error: "Server time expired; attempt finalized with accepted answers.",
-        expired: true,
-        serverNow: now.toISOString(),
-      },
-      { status: 409 }
-    );
-  }
   if (attempt.status !== "in_progress") {
     return NextResponse.json(
       { error: `Attempt already ${attempt.status}` },
@@ -106,24 +98,9 @@ export async function POST(
 
   const txResult = await prisma.$transaction(async (tx) => {
     const txNow = new Date();
-    const alive = await tx.attempt.updateMany({
-      where: {
-        id: attempt.id,
-        status: "in_progress",
-        serverExpiresAt: { gte: txNow },
-      },
-      data: { lastHeartbeatAt: txNow },
-    });
-    if (alive.count === 0) {
-      const latest = await tx.attempt.findUnique({
-        where: { id: attempt.id },
-        select: { status: true, serverExpiresAt: true },
-      });
-      if (!latest) return { kind: "not_found" as const };
-      if (latest.status !== "in_progress") {
-        return { kind: "already_finalized" as const, status: latest.status };
-      }
-      return { kind: "expired" as const };
+    const hb = await reconcileAttemptHeartbeatInTx(tx, attempt.id, txNow);
+    if (hb.kind !== "ok") {
+      return hb;
     }
 
     for (const u of dedupedUpdates) {
@@ -226,7 +203,14 @@ export async function POST(
       });
     }
 
-    return { kind: "ok" as const, txNow };
+    return {
+      kind: "ok" as const,
+      txNow,
+      serverExpiresAt: hb.serverExpiresAt,
+      autoPausedMs: hb.autoPausedMs,
+      capMs: hb.capMs,
+      creditedMs: hb.creditedMs,
+    };
   }, { maxWait: 10_000, timeout: 20_000 });
 
   if (txResult.kind === "not_found") {
@@ -250,6 +234,7 @@ export async function POST(
     );
   }
 
+  invalidateCacheTags("monitor", "grading");
   await broadcastExamEvent(attempt.examId, "attempt_updated", {
     attemptId: attempt.id,
   });
@@ -259,6 +244,9 @@ export async function POST(
     acceptedRevisions,
     conflicts,
     serverNow: txResult.txNow.toISOString(),
-    serverExpiresAt: attempt.serverExpiresAt.toISOString(),
+    serverExpiresAt: txResult.serverExpiresAt.toISOString(),
+    autoPausedMs: txResult.autoPausedMs,
+    autoPauseCapMs: txResult.capMs,
+    creditedMs: txResult.creditedMs,
   });
 }

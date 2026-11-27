@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { canManageExam, requireRole } from "@/lib/auth";
-import { finalizeAttemptInTx } from "@/lib/grading";
+import {
+  finalizeAttemptInTx,
+  getAttemptAutoPauseCapMs,
+  shouldAutoExpireAttempt,
+} from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import { broadcastExamEvent } from "@/lib/realtime";
+import { getOrLoadCached, invalidateCacheTags } from "@/lib/serverCache";
 import type { AttemptItemSnapshot } from "@/lib/types";
 import { announcementSchema, safeParseJson } from "@/lib/validation";
 
@@ -37,6 +42,8 @@ export async function GET(req: Request) {
               id: true,
               status: true,
               serverExpiresAt: true,
+              autoPausedMs: true,
+              exam: { select: { durationMinutes: true } },
             },
           })
         : Promise.resolve(null),
@@ -51,6 +58,10 @@ export async function GET(req: Request) {
             id: attemptState.id,
             status: attemptState.status,
             serverExpiresAt: attemptState.serverExpiresAt.toISOString(),
+            autoPausedMs: attemptState.autoPausedMs,
+            autoPauseCapMs: getAttemptAutoPauseCapMs(
+              attemptState.exam.durationMinutes
+            ),
           }
         : null,
       serverNow: new Date().toISOString(),
@@ -63,120 +74,168 @@ export async function GET(req: Request) {
       ? undefined
       : { createdById: auth.user.id };
 
-  const [examRecord, rawAttempts, announcements] = await Promise.all([
-    examId
-      ? prisma.exam.findUnique({
-          where: { id: examId },
-          select: { id: true, createdById: true },
-        })
-      : Promise.resolve(null),
-    prisma.attempt.findMany({
-      where: examScope ? { exam: examScope } : undefined,
-      select: {
-        id: true,
-        examId: true,
-        status: true,
-        gradingState: true,
-        startedAt: true,
-        serverExpiresAt: true,
-        lastHeartbeatAt: true,
-        itemsSnapshot: true,
-        candidate: { select: { name: true, email: true } },
-        exam: { select: { code: true } },
-        answers: {
+  const cacheKey = `monitor:${auth.user.role}:${auth.user.id}:${examId ?? "all"}`;
+  const result = await getOrLoadCached(
+    cacheKey,
+    ["monitor"],
+    10_000,
+    async () => {
+      const [examRecord, rawAttempts, announcements] = await Promise.all([
+        examId
+          ? prisma.exam.findUnique({
+              where: { id: examId },
+              select: { id: true, createdById: true },
+            })
+          : Promise.resolve(null),
+        prisma.attempt.findMany({
+          relationLoadStrategy: "join",
+          where: examScope ? { exam: examScope } : undefined,
           select: {
-            questionId: true,
-            selectedOptionIds: true,
-            writtenText: true,
+            id: true,
+            examId: true,
+            status: true,
+            gradingState: true,
+            startedAt: true,
+            serverExpiresAt: true,
+            lastHeartbeatAt: true,
+            autoPausedMs: true,
+            itemsSnapshot: true,
+            candidate: { select: { name: true, email: true } },
+            exam: { select: { code: true, durationMinutes: true } },
+            answers: {
+              select: {
+                questionId: true,
+                selectedOptionIds: true,
+                writtenText: true,
+              },
+            },
+            incidents: {
+              orderBy: { createdAt: "desc" },
+              take: 8,
+              select: { id: true, type: true, detail: true, createdAt: true },
+            },
           },
-        },
-        incidents: {
+          orderBy: { startedAt: "desc" },
+        }),
+        prisma.announcement.findMany({
+          where: examScope ? { exam: examScope } : undefined,
           orderBy: { createdAt: "desc" },
-          take: 8,
-          select: { id: true, type: true, detail: true, createdAt: true },
+          take: 20,
+        }),
+      ]);
+
+      if (examId) {
+        if (!examRecord) {
+          return {
+            status: 404 as const,
+            body: { error: "Exam not found" },
+            activeExpiresAt: [] as number[],
+          };
+        }
+        if (!canManageExam(auth.user, examRecord.createdById)) {
+          return {
+            status: 403 as const,
+            body: { error: "Forbidden" },
+            activeExpiresAt: [] as number[],
+          };
+        }
+      }
+
+      const loadNow = new Date();
+      const staleAttempts = rawAttempts.filter(
+        (att) =>
+          att.status === "in_progress" &&
+          shouldAutoExpireAttempt({
+            nowMs: loadNow.getTime(),
+            lastHeartbeatAtMs: att.lastHeartbeatAt.getTime(),
+            serverExpiresAtMs: att.serverExpiresAt.getTime(),
+            autoPausedMs: att.autoPausedMs,
+            durationMinutes: att.exam.durationMinutes,
+          })
+      );
+      const finalizedById = new Map<
+        string,
+        NonNullable<Awaited<ReturnType<typeof finalizeAttemptInTx>>>
+      >();
+      if (staleAttempts.length > 0) {
+        const doneList = await Promise.all(
+          staleAttempts.map((att) => finalizeAttemptInTx(att.id, "expired"))
+        );
+        for (const done of doneList) {
+          if (done) finalizedById.set(done.id, done);
+        }
+      }
+
+      const activeExpiresAt: number[] = [];
+      const attempts = rawAttempts.map((att) => {
+        const done = finalizedById.get(att.id);
+        const status = done?.status ?? att.status;
+        const gradingState = done?.gradingState ?? att.gradingState;
+        if (status === "in_progress") {
+          activeExpiresAt.push(att.serverExpiresAt.getTime());
+        }
+
+        const items = att.itemsSnapshot as unknown as AttemptItemSnapshot[];
+        const answerByQ = new Map(att.answers.map((a) => [a.questionId, a]));
+        const answeredCount = items.filter((item) => {
+          const ans = answerByQ.get(item.questionId);
+          if (!ans) return false;
+          if (item.type === "written") return ans.writtenText.trim().length > 0;
+          const sel = Array.isArray(ans.selectedOptionIds)
+            ? (ans.selectedOptionIds as string[])
+            : [];
+          return sel.length > 0;
+        }).length;
+
+        return {
+          id: att.id,
+          examId: att.examId,
+          examCode: att.exam.code,
+          candidateName: att.candidate.name,
+          candidateEmail: att.candidate.email,
+          status,
+          gradingState,
+          answeredCount,
+          totalQuestions: items.length,
+          startedAt: att.startedAt.toISOString(),
+          serverExpiresAt: att.serverExpiresAt.toISOString(),
+          lastHeartbeatAt: att.lastHeartbeatAt.toISOString(),
+          autoPausedMs: att.autoPausedMs,
+          autoPauseCapMs: getAttemptAutoPauseCapMs(att.exam.durationMinutes),
+          incidents: att.incidents.map((i) => ({
+            id: i.id,
+            type: i.type,
+            detail: i.detail,
+            timestamp: i.createdAt.toISOString(),
+          })),
+        };
+      });
+
+      return {
+        status: 200 as const,
+        activeExpiresAt,
+        body: {
+          attempts,
+          announcements: announcements.map((a) => ({
+            ...a,
+            createdAt: a.createdAt.toISOString(),
+          })),
         },
-      },
-      orderBy: { startedAt: "desc" },
-    }),
-    prisma.announcement.findMany({
-      where: examScope ? { exam: examScope } : undefined,
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    }),
-  ]);
-
-  if (examId) {
-    if (!examRecord) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      };
+    },
+    (cached) => {
+      const nowMs = Date.now();
+      return cached.activeExpiresAt.every((exp) => exp > nowMs);
     }
-    if (!canManageExam(auth.user, examRecord.createdById)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
-
-  const now = new Date();
-  const staleAttempts = rawAttempts.filter(
-    (att) => att.status === "in_progress" && now > att.serverExpiresAt
   );
-  const finalizedById = new Map<
-    string,
-    NonNullable<Awaited<ReturnType<typeof finalizeAttemptInTx>>>
-  >();
-  if (staleAttempts.length > 0) {
-    const doneList = await Promise.all(
-      staleAttempts.map((att) => finalizeAttemptInTx(att.id, "expired"))
-    );
-    for (const done of doneList) {
-      if (done) finalizedById.set(done.id, done);
-    }
+
+  if (result.status !== 200) {
+    return NextResponse.json(result.body, { status: result.status });
   }
-
-  const attempts = rawAttempts.map((att) => {
-    const done = finalizedById.get(att.id);
-    const status = done?.status ?? att.status;
-    const gradingState = done?.gradingState ?? att.gradingState;
-
-    const items = att.itemsSnapshot as unknown as AttemptItemSnapshot[];
-    const answerByQ = new Map(att.answers.map((a) => [a.questionId, a]));
-    const answeredCount = items.filter((item) => {
-      const ans = answerByQ.get(item.questionId);
-      if (!ans) return false;
-      if (item.type === "written") return ans.writtenText.trim().length > 0;
-      const sel = Array.isArray(ans.selectedOptionIds)
-        ? (ans.selectedOptionIds as string[])
-        : [];
-      return sel.length > 0;
-    }).length;
-
-    return {
-      id: att.id,
-      examId: att.examId,
-      examCode: att.exam.code,
-      candidateName: att.candidate.name,
-      candidateEmail: att.candidate.email,
-      status,
-      gradingState,
-      answeredCount,
-      totalQuestions: items.length,
-      startedAt: att.startedAt.toISOString(),
-      serverExpiresAt: att.serverExpiresAt.toISOString(),
-      lastHeartbeatAt: att.lastHeartbeatAt.toISOString(),
-      incidents: att.incidents.map((i) => ({
-        id: i.id,
-        type: i.type,
-        detail: i.detail,
-        timestamp: i.createdAt.toISOString(),
-      })),
-    };
-  });
 
   return NextResponse.json({
-    attempts,
-    announcements: announcements.map((a) => ({
-      ...a,
-      createdAt: a.createdAt.toISOString(),
-    })),
-    serverNow: now.toISOString(),
+    ...result.body,
+    serverNow: new Date().toISOString(),
   });
 }
 
@@ -211,6 +270,7 @@ export async function POST(req: Request) {
     },
   });
 
+  invalidateCacheTags("monitor");
   await broadcastExamEvent(examId, "announcement", {
     id: created.id,
     message: created.message,

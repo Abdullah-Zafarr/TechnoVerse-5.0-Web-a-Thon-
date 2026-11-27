@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   ShieldAlert,
   RefreshCw,
+  Lock,
 } from "lucide-react";
 import {
   clearOfflineState,
@@ -119,15 +120,26 @@ function ExamWorkspaceContent() {
   const [remainingMs, setRemainingMs] = useState<number>(0);
 
   const [online, setOnline] = useState(true);
+  const [connectionLost, setConnectionLost] = useState(false);
+  const [disconnectReason, setDisconnectReason] = useState<
+    "offline" | "timeout" | "sync_error" | null
+  >(null);
+  const [autoPausedMs, setAutoPausedMs] = useState<number>(0);
+  const [autoPauseCapMs, setAutoPauseCapMs] = useState<number>(300_000);
   const [pendingQueue, setPendingQueue] = useState<
     Record<string, LocalAnswerState>
   >({});
   const pendingQueueRef = useRef<Record<string, LocalAnswerState>>({});
   const flushInFlightRef = useRef(false);
+  const heartbeatInFlightRef = useRef(false);
   const needsReflushRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const offlineSinceRef = useRef<number | null>(null);
   const retryDelayRef = useRef<number>(3000);
+
+  const isLocked = !isSandbox && (!online || connectionLost);
+  const isLockedRef = useRef(false);
+  isLockedRef.current = isLocked;
 
   const [syncStatus, setSyncStatus] = useState<
     "synced" | "syncing" | "offline_queued" | "error"
@@ -171,6 +183,81 @@ function ExamWorkspaceContent() {
     } catch {}
   }
 
+  const applyServerTiming = useCallback(
+    (payload: {
+      serverNow?: string;
+      serverExpiresAt?: string;
+      autoPausedMs?: number;
+      autoPauseCapMs?: number;
+      creditedMs?: number;
+      graceMinutes?: number;
+    }) => {
+      if (payload.serverNow) {
+        setServerDeltaMs(new Date(payload.serverNow).getTime() - Date.now());
+      }
+      if (typeof payload.autoPausedMs === "number") {
+        setAutoPausedMs(payload.autoPausedMs);
+      }
+      if (typeof payload.autoPauseCapMs === "number") {
+        setAutoPauseCapMs(payload.autoPauseCapMs);
+      }
+      if (payload.serverExpiresAt) {
+        const nextExp = new Date(payload.serverExpiresAt).getTime();
+        if (nextExp > expiresAtMsRef.current) {
+          expiresAtMsRef.current = nextExp;
+          setExpiresAtMs(nextExp);
+          setSubmittedNotice(null);
+          if (payload.creditedMs && payload.creditedMs > 0) {
+            const creditedSec = Math.max(
+              1,
+              Math.round(payload.creditedMs / 1000)
+            );
+            const usedSec = Math.round((payload.autoPausedMs ?? 0) / 1000);
+            const capSec = Math.round((payload.autoPauseCapMs ?? 300_000) / 1000);
+            setGraceNotice(
+              `Connection restored. Auto-paused ${creditedSec}s credited (${usedSec}s / ${capSec}s outage budget used).`
+            );
+          } else if (payload.graceMinutes) {
+            setGraceNotice(
+              `Examiner granted +${payload.graceMinutes} min verified outage grace. Your deadline has been updated.`
+            );
+          }
+        }
+      }
+    },
+    []
+  );
+
+  const enterOutageLock = useCallback(
+    (reason: "offline" | "timeout" | "sync_error") => {
+      setConnectionLost(true);
+      setDisconnectReason(reason);
+      setShowReviewModal(false);
+      if (offlineSinceRef.current === null) {
+        offlineSinceRef.current = Date.now();
+      }
+      if (attemptId && !isSandbox) {
+        void saveOfflineState({
+          attemptId,
+          queue: toQueuedRecord(pendingQueueRef.current),
+          offlineSinceMs: offlineSinceRef.current,
+          lastSyncError: reason === "timeout" ? "Request timed out" : "Offline",
+          updatedAtMs: Date.now(),
+        });
+      }
+      setSyncStatus("offline_queued");
+    },
+    [attemptId, isSandbox]
+  );
+
+  const goToQuestion = useCallback(
+    (nextIndex: number) => {
+      if (isLockedRef.current) return;
+      setActiveIndex(Math.max(0, Math.min(items.length - 1, nextIndex)));
+    },
+    [items.length]
+  );
+
   useEffect(() => {
     async function init() {
       setLoading(true);
@@ -185,6 +272,9 @@ function ExamWorkspaceContent() {
         attempt?: {
           id: string;
           serverExpiresAt: string;
+          autoPausedMs?: number;
+          autoPauseCapMs?: number;
+          creditedMs?: number;
           items: SanitizedItem[];
           answers: Record<string, LocalAnswerState>;
         };
@@ -209,6 +299,13 @@ function ExamWorkspaceContent() {
       expiresAtMsRef.current = expMs;
       setExpiresAtMs(expMs);
       setRemainingMs(Math.max(0, expMs - (Date.now() + delta)));
+      applyServerTiming({
+        serverNow: data.serverNow,
+        serverExpiresAt: data.attempt.serverExpiresAt,
+        autoPausedMs: data.attempt.autoPausedMs,
+        autoPauseCapMs: data.attempt.autoPauseCapMs,
+        creditedMs: data.attempt.creditedMs,
+      });
 
       const merged: Record<string, LocalAnswerState> = { ...data.attempt.answers };
       try {
@@ -257,9 +354,9 @@ function ExamWorkspaceContent() {
     init();
   }, [params.examId, isSandbox]);
 
-  // Restore saved scratchpad drawing whenever scratchpad opens
+  // Restore saved scratchpad drawing whenever scratchpad opens or unlocks
   useEffect(() => {
-    if (!showScratchpad || !attemptId || !canvasRef.current) return;
+    if (!showScratchpad || isLocked || !attemptId || !canvasRef.current) return;
     try {
       const dataUrl = localStorage.getItem(
         `examguard_scratch_canvas_${attemptId}`
@@ -281,7 +378,7 @@ function ExamWorkspaceContent() {
         img.src = dataUrl;
       }
     } catch {}
-  }, [showScratchpad, attemptId]);
+  }, [showScratchpad, isLocked, attemptId]);
 
   useEffect(() => {
     if (!showReviewModal) return;
@@ -318,11 +415,14 @@ function ExamWorkspaceContent() {
     flushInFlightRef.current = true;
     setSyncStatus("syncing");
     const offlineStartedAt = offlineSinceRef.current;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
       const res = await fetch(`/api/attempts/${attemptId}/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           updates: entries.map(([questionId, ans]) => ({
             questionId,
@@ -349,23 +449,26 @@ function ExamWorkspaceContent() {
         pendingQueueRef.current = {};
         setPendingQueue({});
         offlineSinceRef.current = null;
+        setConnectionLost(false);
+        setDisconnectReason(null);
         await clearOfflineState(attemptId);
         setSubmittedNotice(d.error ?? "Time limit expired; attempt finalized.");
         setSyncStatus("error");
         return false;
       }
       if (!res.ok) {
-        if (offlineSinceRef.current === null && !navigator.onLine) {
-          offlineSinceRef.current = Date.now();
+        if (res.status >= 500) {
+          enterOutageLock("sync_error");
+        } else {
+          await saveOfflineState({
+            attemptId,
+            queue: toQueuedRecord(pendingQueueRef.current),
+            offlineSinceMs: offlineSinceRef.current,
+            lastSyncError: `HTTP ${res.status}`,
+            updatedAtMs: Date.now(),
+          });
+          setSyncStatus("error");
         }
-        await saveOfflineState({
-          attemptId,
-          queue: toQueuedRecord(pendingQueueRef.current),
-          offlineSinceMs: offlineSinceRef.current,
-          lastSyncError: `HTTP ${res.status}`,
-          updatedAtMs: Date.now(),
-        });
-        setSyncStatus("error");
         return false;
       }
 
@@ -373,18 +476,15 @@ function ExamWorkspaceContent() {
         conflicts?: Record<string, AnswerConflictInfo>;
         serverNow?: string;
         serverExpiresAt?: string;
+        autoPausedMs?: number;
+        autoPauseCapMs?: number;
+        creditedMs?: number;
       };
 
-      if (data.serverNow) {
-        setServerDeltaMs(new Date(data.serverNow).getTime() - Date.now());
-      }
-      if (data.serverExpiresAt) {
-        const nextExp = new Date(data.serverExpiresAt).getTime();
-        if (nextExp > expiresAtMsRef.current) {
-          expiresAtMsRef.current = nextExp;
-          setExpiresAtMs(nextExp);
-        }
-      }
+      setOnline(true);
+      setConnectionLost(false);
+      setDisconnectReason(null);
+      applyServerTiming(data);
 
       const conflicts = data.conflicts ?? {};
       const supersededIds: string[] = [];
@@ -450,27 +550,96 @@ function ExamWorkspaceContent() {
       }
       setLastSyncedAt(new Date().toLocaleTimeString());
       return Object.keys(remaining).length === 0;
-    } catch {
-      if (offlineSinceRef.current === null) {
-        offlineSinceRef.current = Date.now();
-      }
-      await saveOfflineState({
-        attemptId,
-        queue: toQueuedRecord(pendingQueueRef.current),
-        offlineSinceMs: offlineSinceRef.current,
-        lastSyncError: "Network unavailable",
-        updatedAtMs: Date.now(),
-      });
-      setSyncStatus("offline_queued");
+    } catch (err) {
+      const reason =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "timeout"
+          : "offline";
+      enterOutageLock(reason);
       return false;
     } finally {
+      clearTimeout(timeoutId);
       flushInFlightRef.current = false;
       if (needsReflushRef.current) {
         needsReflushRef.current = false;
         void flushQueue();
       }
     }
-  }, [attemptId, isSandbox]);
+  }, [attemptId, isSandbox, applyServerTiming, enterOutageLock]);
+
+  const sendHeartbeat = useCallback(async () => {
+    if (
+      !attemptId ||
+      isSandbox ||
+      submittedNotice ||
+      heartbeatInFlightRef.current
+    ) {
+      return;
+    }
+    heartbeatInFlightRef.current = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    try {
+      const res = await fetch(`/api/attempts/${attemptId}/heartbeat`, {
+        method: "POST",
+        signal: controller.signal,
+      });
+      if (res.status === 409) {
+        const d = (await res.json()) as { error?: string };
+        pendingQueueRef.current = {};
+        setPendingQueue({});
+        offlineSinceRef.current = null;
+        setConnectionLost(false);
+        setDisconnectReason(null);
+        await clearOfflineState(attemptId);
+        setSubmittedNotice(d.error ?? "Time limit expired; attempt finalized.");
+        return;
+      }
+      if (!res.ok) {
+        enterOutageLock("sync_error");
+        return;
+      }
+      const data = (await res.json()) as {
+        serverNow?: string;
+        serverExpiresAt?: string;
+        autoPausedMs?: number;
+        autoPauseCapMs?: number;
+        creditedMs?: number;
+      };
+      setOnline(true);
+      setConnectionLost(false);
+      setDisconnectReason(null);
+      applyServerTiming(data);
+      if (Object.keys(pendingQueueRef.current).length > 0) {
+        void flushQueue();
+      }
+    } catch (err) {
+      const reason =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "timeout"
+          : "offline";
+      enterOutageLock(reason);
+    } finally {
+      clearTimeout(timeoutId);
+      heartbeatInFlightRef.current = false;
+    }
+  }, [
+    attemptId,
+    isSandbox,
+    submittedNotice,
+    applyServerTiming,
+    enterOutageLock,
+    flushQueue,
+  ]);
+
+  useEffect(() => {
+    if (loading || isSandbox || !attemptId || submittedNotice) return;
+    const intervalMs = isLocked ? 3000 : 5000;
+    const timer = setInterval(() => {
+      void sendHeartbeat();
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [loading, isSandbox, attemptId, submittedNotice, isLocked, sendHeartbeat]);
 
   useEffect(() => {
     if (
@@ -485,29 +654,21 @@ function ExamWorkspaceContent() {
   }, [loading, isSandbox, attemptId, flushQueue]);
 
   useEffect(() => {
-    setOnline(navigator.onLine);
+    const isNowOnline = navigator.onLine;
+    setOnline(isNowOnline);
+    if (!isNowOnline && !isSandbox) {
+      enterOutageLock("offline");
+    }
     const onOnline = () => {
       setOnline(true);
       retryDelayRef.current = 3000;
-      if (Object.keys(pendingQueueRef.current).length > 0) {
-        void flushQueue();
-      }
+      void sendHeartbeat();
     };
     const onOffline = () => {
       setOnline(false);
-      if (offlineSinceRef.current === null) {
-        offlineSinceRef.current = Date.now();
+      if (!isSandbox) {
+        enterOutageLock("offline");
       }
-      if (attemptId && !isSandbox) {
-        void saveOfflineState({
-          attemptId,
-          queue: toQueuedRecord(pendingQueueRef.current),
-          offlineSinceMs: offlineSinceRef.current,
-          lastSyncError: null,
-          updatedAtMs: Date.now(),
-        });
-      }
-      setSyncStatus("offline_queued");
     };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
@@ -515,7 +676,7 @@ function ExamWorkspaceContent() {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [attemptId, isSandbox, flushQueue]);
+  }, [attemptId, isSandbox, enterOutageLock, sendHeartbeat]);
 
   // Exponential backoff retry for silent WAN drops when navigator.onLine stays true
   useEffect(() => {
@@ -540,7 +701,7 @@ function ExamWorkspaceContent() {
   useEffect(() => {
     if (!attemptId || isSandbox) return;
     const onVisibility = () => {
-      if (document.hidden && navigator.onLine) {
+      if (document.hidden && navigator.onLine && !isLockedRef.current) {
         fetch(`/api/attempts/${attemptId}/answer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -558,26 +719,26 @@ function ExamWorkspaceContent() {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [attemptId, isSandbox]);
 
-  // Keyboard shortcuts Alt+ArrowLeft / Alt+ArrowRight
+  // Keyboard shortcuts Alt+ArrowLeft / Alt+ArrowRight (blocked while connection locked)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey) return;
+      if (!e.altKey || isLockedRef.current) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        setActiveIndex((i) => Math.max(0, i - 1));
+        goToQuestion(activeIndex - 1);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        setActiveIndex((i) => Math.min(items.length - 1, i + 1));
+        goToQuestion(activeIndex + 1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [items.length]);
+  }, [activeIndex, goToQuestion]);
 
   useEffect(() => {
-    if (!expiresAtMs || submittedNotice) return;
+    if (!expiresAtMs || submittedNotice || isLocked) return;
     let preExpiryFlushed = false;
-    const timer = setInterval(() => {
+    const tick = () => {
       const ms = Math.max(0, expiresAtMs - (Date.now() + serverDeltaMs));
       setRemainingMs(ms);
       if (
@@ -586,7 +747,7 @@ function ExamWorkspaceContent() {
         ms > 0 &&
         !isSandbox &&
         attemptId &&
-        online &&
+        !isLockedRef.current &&
         Object.keys(pendingQueueRef.current).length > 0
       ) {
         preExpiryFlushed = true;
@@ -598,7 +759,7 @@ function ExamWorkspaceContent() {
         if (!isSandbox && attemptId) {
           if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
           const finalize = async () => {
-            if (online && Object.keys(pendingQueueRef.current).length > 0) {
+            if (!isLockedRef.current && Object.keys(pendingQueueRef.current).length > 0) {
               await flushQueue();
             }
             const res = await fetch(`/api/attempts/${attemptId}/submit`, {
@@ -617,32 +778,36 @@ function ExamWorkspaceContent() {
           setSubmittedNotice("Sandbox preview timer completed.");
         }
       }
-    }, 1000);
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [expiresAtMs, serverDeltaMs, attemptId, isSandbox, submittedNotice, online, flushQueue]);
+  }, [
+    expiresAtMs,
+    serverDeltaMs,
+    attemptId,
+    isSandbox,
+    submittedNotice,
+    isLocked,
+    flushQueue,
+  ]);
 
   useEffect(() => {
     if (!examMeta) return;
     const applyServerDeadline = (
       serverExpiresIso: string | undefined,
       serverNowIso?: string,
-      graceMinutes?: number
+      graceMinutes?: number,
+      nextAutoPausedMs?: number,
+      nextAutoPauseCapMs?: number
     ) => {
-      if (serverNowIso) {
-        setServerDeltaMs(new Date(serverNowIso).getTime() - Date.now());
-      }
-      if (!serverExpiresIso) return;
-      const nextExp = new Date(serverExpiresIso).getTime();
-      if (nextExp > expiresAtMsRef.current) {
-        expiresAtMsRef.current = nextExp;
-        setExpiresAtMs(nextExp);
-        setSubmittedNotice(null);
-        setGraceNotice(
-          graceMinutes
-            ? `Examiner granted +${graceMinutes} min verified outage grace. Your deadline has been updated.`
-            : "Examiner updated your server deadline for a verified outage."
-        );
-      }
+      applyServerTiming({
+        serverNow: serverNowIso,
+        serverExpiresAt: serverExpiresIso,
+        graceMinutes,
+        autoPausedMs: nextAutoPausedMs,
+        autoPauseCapMs: nextAutoPauseCapMs,
+      });
     };
 
     const loadAnn = () => {
@@ -659,12 +824,20 @@ function ExamWorkspaceContent() {
                 id: string;
                 status: string;
                 serverExpiresAt: string;
+                autoPausedMs?: number;
+                autoPauseCapMs?: number;
               } | null;
             } | null
           ) => {
             if (d?.announcements) setAnnouncements(d.announcements);
             if (d?.attemptState) {
-              applyServerDeadline(d.attemptState.serverExpiresAt, d.serverNow);
+              applyServerDeadline(
+                d.attemptState.serverExpiresAt,
+                d.serverNow,
+                undefined,
+                d.attemptState.autoPausedMs,
+                d.attemptState.autoPauseCapMs
+              );
             }
           }
         )
@@ -705,13 +878,14 @@ function ExamWorkspaceContent() {
       clearInterval(t);
       if (supa && channel) supa.removeChannel(channel);
     };
-  }, [examMeta, attemptId, isSandbox]);
+  }, [examMeta, attemptId, isSandbox, applyServerTiming]);
 
   function commitAnswerChange(
     questionId: string,
     updater: (prev: LocalAnswerState) => LocalAnswerState,
     debounceMs = 0
   ) {
+    if (!isSandbox && isLockedRef.current) return;
     setAnswers((curr) => {
       const prev = curr[questionId] ?? {
         selectedOptionIds: [],
@@ -766,7 +940,7 @@ function ExamWorkspaceContent() {
       );
       return;
     }
-    if (!online) {
+    if (isLocked) {
       setError("Restore network connection to sync answers before submitting.");
       return;
     }
@@ -986,7 +1160,7 @@ function ExamWorkspaceContent() {
               role="status"
               aria-live="polite"
               className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
-                !online ||
+                isLocked ||
                 syncStatus === "offline_queued" ||
                 syncStatus === "error"
                   ? "border-[#B91C1C]/40 bg-[#FEF2F2] text-[#B91C1C]"
@@ -995,15 +1169,18 @@ function ExamWorkspaceContent() {
                     : "border-[#0F766E]/30 bg-[#F0FDFA] text-[#0F766E]"
               }`}
             >
-              {online ? (
+              {!isLocked ? (
                 <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
               ) : (
                 <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
               )}
               <span>
-                {!online ? (
+                {isLocked ? (
                   <>
-                    Offline (
+                    {disconnectReason === "timeout"
+                      ? "Timed out"
+                      : "Offline locked"}{" "}
+                    (
                     <span className="font-mono tabular-nums">
                       {Object.keys(pendingQueue).length}
                     </span>{" "}
@@ -1032,23 +1209,26 @@ function ExamWorkspaceContent() {
               </span>
             </div>
 
-            {(syncStatus === "offline_queued" || syncStatus === "error") &&
-              online && (
+            {(isLocked ||
+              syncStatus === "offline_queued" ||
+              syncStatus === "error") &&
+              !isSandbox && (
                 <button
                   type="button"
-                  onClick={() => flushQueue()}
+                  onClick={() => (isLocked ? sendHeartbeat() : flushQueue())}
                   className="inline-flex min-h-[40px] cursor-pointer items-center gap-1 rounded-lg border border-[#1D4ED8]/40 bg-[#EFF6FF] px-3 py-1.5 text-xs font-medium text-[#1D4ED8]"
                 >
                   <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Retry sync</span>
+                  <span>{isLocked ? "Check connection" : "Retry sync"}</span>
                 </button>
               )}
 
             <button
               type="button"
               aria-expanded={showScratchpad}
+              disabled={isLocked}
               onClick={() => setShowScratchpad((v) => !v)}
-              className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium"
+              className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
             >
               <PenTool className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Scratchpad</span>
@@ -1067,26 +1247,43 @@ function ExamWorkspaceContent() {
             <div
               aria-live="polite"
               className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-sm font-semibold tabular-nums ${
-                remainingMs < 120_000
-                  ? "bg-[#B91C1C] text-white"
-                  : "bg-[#0F172A] text-white"
+                isLocked
+                  ? "bg-[#B45309] text-white"
+                  : remainingMs < 120_000
+                    ? "bg-[#B91C1C] text-white"
+                    : "bg-[#0F172A] text-white"
               }`}
             >
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{formatCountdown(remainingMs)}</span>
+              {isLocked && (
+                <span className="rounded bg-black/25 px-1.5 py-0.5 text-[10px] font-bold tracking-wide">
+                  PAUSED
+                </span>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      {!online && (
+      {isLocked && (
         <div
           role="alert"
           className="border-b border-[#B91C1C]/30 bg-[#FEF2F2] px-4 py-2 text-xs text-[#B91C1C] sm:px-6"
         >
-          <div className="mx-auto max-w-[1440px]">
-            Connection lost. Answers are saved to your local IndexedDB queue and
-            will sync on reconnect; the server deadline continues running.
+          <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2">
+            <span>
+              {disconnectReason === "timeout"
+                ? "Server connection timed out."
+                : "Connection lost."}{" "}
+              Timer paused and question switching locked until connection
+              returns. Buffered answers remain saved in your local queue.
+            </span>
+            <span className="font-mono tabular-nums font-medium">
+              Outage budget:{" "}
+              {Math.round(autoPausedMs / 1000)}s /{" "}
+              {Math.round(autoPauseCapMs / 1000)}s
+            </span>
           </div>
         </div>
       )}
@@ -1313,10 +1510,11 @@ function ExamWorkspaceContent() {
                     <button
                       key={item.questionId}
                       type="button"
+                      disabled={isLocked}
                       aria-label={`Question ${item.order}, ${statusLabel}`}
                       aria-current={isCurrent ? "step" : undefined}
-                      onClick={() => setActiveIndex(idx)}
-                      className={`min-h-[40px] cursor-pointer rounded-md border font-mono text-xs font-semibold tabular-nums transition-colors ${
+                      onClick={() => goToQuestion(idx)}
+                      className={`min-h-[40px] cursor-pointer rounded-md border font-mono text-xs font-semibold tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                         isCurrent
                           ? "border-[#1D4ED8] ring-2 ring-[#1D4ED8]"
                           : "border-current/20"
@@ -1339,10 +1537,18 @@ function ExamWorkspaceContent() {
                 <span>Amber: Review</span>
               </div>
 
+              {isLocked && (
+                <p className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#B45309]/35 bg-[#FFFBEB] px-2.5 py-2 text-xs text-[#B45309]">
+                  <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>Question switching locked while offline.</span>
+                </p>
+              )}
+
               <button
                 type="button"
+                disabled={isLocked}
                 onClick={() => setShowReviewModal(true)}
-                className="mt-6 min-h-[42px] w-full cursor-pointer rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+                className="mt-6 min-h-[42px] w-full cursor-pointer rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {isSandbox ? "Finish sandbox" : "Review and submit"}
               </button>
@@ -1350,14 +1556,60 @@ function ExamWorkspaceContent() {
 
             <section
               className={`rounded-xl border p-6 ${mainOrderClass} ${
-                showScratchpad
+                showScratchpad && !isLocked
                   ? "lg:col-span-5"
                   : prefs.compactNav
                     ? "lg:col-span-9"
                     : "lg:col-span-8"
               } ${cardBg}`}
             >
-              {currentItem && currentAns && (
+              {isLocked ? (
+                <div
+                  role="alert"
+                  className="mx-auto max-w-lg py-10 text-center"
+                >
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-[#B91C1C]/30 bg-[#FEF2F2] text-[#B91C1C]">
+                    <Lock className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <h2 className="mt-4 text-lg font-semibold">
+                    Connection lost — workspace locked
+                  </h2>
+                  <p className="mt-2 text-sm opacity-80">
+                    {disconnectReason === "timeout"
+                      ? "Your connection timed out waiting for the server."
+                      : "Your internet connection dropped."}{" "}
+                    Your countdown timer is paused and question navigation is
+                    locked until the server connection returns.
+                  </p>
+                  <p className="mt-3 text-xs opacity-75">
+                    Local safety queue:{" "}
+                    <span className="font-mono font-semibold tabular-nums">
+                      {Object.keys(pendingQueue).length}
+                    </span>{" "}
+                    pending update(s) preserved in IndexedDB.
+                  </p>
+                  <p className="mt-1 text-xs opacity-75">
+                    Auto-pause budget:{" "}
+                    <span className="font-mono font-semibold tabular-nums">
+                      {Math.round(autoPausedMs / 1000)}s /{" "}
+                      {Math.round(autoPauseCapMs / 1000)}s
+                    </span>
+                    {autoPausedMs >= autoPauseCapMs
+                      ? " (budget exhausted — contact examiner for verified outage grace)"
+                      : ""}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => sendHeartbeat()}
+                    className="mt-5 inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+                  >
+                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                    <span>Reconnect now</span>
+                  </button>
+                </div>
+              ) : (
+                currentItem &&
+                currentAns && (
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-current/15 pb-3">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -1490,8 +1742,8 @@ function ExamWorkspaceContent() {
                   <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-current/15 pt-4">
                     <button
                       type="button"
-                      disabled={activeIndex === 0}
-                      onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
+                      disabled={activeIndex === 0 || isLocked}
+                      onClick={() => goToQuestion(activeIndex - 1)}
                       className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-sm font-medium disabled:opacity-40"
                     >
                       <ChevronLeft className="h-4 w-4" aria-hidden="true" />
@@ -1502,12 +1754,8 @@ function ExamWorkspaceContent() {
                     </button>
                     <button
                       type="button"
-                      disabled={activeIndex === items.length - 1}
-                      onClick={() =>
-                        setActiveIndex((i) =>
-                          Math.min(items.length - 1, i + 1)
-                        )
-                      }
+                      disabled={activeIndex === items.length - 1 || isLocked}
+                      onClick={() => goToQuestion(activeIndex + 1)}
                       className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-current/20 px-3 py-1.5 text-sm font-medium disabled:opacity-40"
                     >
                       <span>Next</span>
@@ -1518,10 +1766,11 @@ function ExamWorkspaceContent() {
                     </button>
                   </div>
                 </div>
+                )
               )}
             </section>
 
-            {showScratchpad && (
+            {showScratchpad && !isLocked && (
               <aside
                 className={`rounded-xl border p-4 lg:order-4 ${
                   prefs.compactNav ? "lg:col-span-4" : "lg:col-span-3"
@@ -1644,8 +1893,9 @@ function ExamWorkspaceContent() {
                     <button
                       key={item.questionId}
                       type="button"
+                      disabled={isLocked}
                       onClick={() => {
-                        setActiveIndex(idx);
+                        goToQuestion(idx);
                         setShowReviewModal(false);
                         setError(null);
                       }}

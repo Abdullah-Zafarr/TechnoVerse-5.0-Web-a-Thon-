@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { Prisma, type Answer, type Attempt, type Exam } from "@prisma/client";
 import { canManageExam, requireRole } from "@/lib/auth";
-import { buildAttemptSnapshots, finalizeAttemptInTx } from "@/lib/grading";
+import {
+  buildAttemptSnapshots,
+  finalizeAttemptInTx,
+  getAttemptAutoPauseCapMs,
+  reconcileAttemptHeartbeat,
+} from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import { broadcastExamEvent } from "@/lib/realtime";
+import { invalidateCacheTags } from "@/lib/serverCache";
 import type { AttemptItemSnapshot } from "@/lib/types";
 
 function stripAnswerKeys(items: AttemptItemSnapshot[]) {
@@ -24,7 +30,8 @@ function stripAnswerKeys(items: AttemptItemSnapshot[]) {
 async function resumeExistingAttempt(
   exam: Exam,
   initialAttempt: (Attempt & { answers: Answer[] }) | null,
-  now: Date
+  now: Date,
+  creditedMs = 0
 ): Promise<NextResponse> {
   let attempt = initialAttempt;
   if (attempt && attempt.status === "in_progress" && now >= attempt.serverExpiresAt) {
@@ -41,13 +48,6 @@ async function resumeExistingAttempt(
       { status: 409 }
     );
   }
-
-  void prisma.attempt
-    .update({
-      where: { id: attempt.id },
-      data: { lastHeartbeatAt: now },
-    })
-    .catch(() => {});
 
   const snapItems = attempt.itemsSnapshot as unknown as AttemptItemSnapshot[];
   const answerMap = Object.fromEntries(
@@ -82,6 +82,9 @@ async function resumeExistingAttempt(
       status: attempt.status,
       startedAt: attempt.startedAt.toISOString(),
       serverExpiresAt: attempt.serverExpiresAt.toISOString(),
+      autoPausedMs: attempt.autoPausedMs,
+      autoPauseCapMs: getAttemptAutoPauseCapMs(exam.durationMinutes),
+      creditedMs,
       totalPossibleMarks: attempt.totalPossibleMarks,
       items: stripAnswerKeys(snapItems),
       answers: answerMap,
@@ -101,6 +104,7 @@ export async function POST(
     if (auth.error) return auth.error;
 
     const exam = await prisma.exam.findUnique({
+      relationLoadStrategy: "join",
       where: { id: examId },
       include: {
         examQuestions: {
@@ -143,6 +147,9 @@ export async function POST(
         status: "in_progress",
         startedAt: now.toISOString(),
         serverExpiresAt: expires.toISOString(),
+        autoPausedMs: 0,
+        autoPauseCapMs: getAttemptAutoPauseCapMs(exam.durationMinutes),
+        creditedMs: 0,
         totalPossibleMarks: items.reduce((s, i) => s + i.marks, 0),
         items: stripAnswerKeys(items),
         answers: {},
@@ -154,6 +161,7 @@ export async function POST(
   if (auth.error) return auth.error;
 
   const exam = await prisma.exam.findUnique({
+    relationLoadStrategy: "join",
     where: { id: examId },
     include: {
       examQuestions: {
@@ -188,10 +196,23 @@ export async function POST(
   }
 
   const now = new Date();
-  const existingAttempt = exam.attempts[0] ?? null;
+  let existingAttempt = exam.attempts[0] ?? null;
 
   if (existingAttempt) {
-    // Allow resuming an active attempt with examiner-granted grace past windowEnd
+    let creditedMs = 0;
+    if (existingAttempt.status === "in_progress") {
+      const hb = await reconcileAttemptHeartbeat(existingAttempt.id, now);
+      if (hb.kind === "ok") {
+        creditedMs = hb.creditedMs;
+        existingAttempt = {
+          ...existingAttempt,
+          serverExpiresAt: hb.serverExpiresAt,
+          autoPausedMs: hb.autoPausedMs,
+          lastHeartbeatAt: hb.now,
+        };
+      }
+    }
+    // Allow resuming an active attempt with examiner-granted or outage grace past windowEnd
     const hasActiveGrace =
       existingAttempt.status === "in_progress" &&
       now < existingAttempt.serverExpiresAt;
@@ -201,7 +222,7 @@ export async function POST(
         { status: 403 }
       );
     }
-    return resumeExistingAttempt(exam, existingAttempt, now);
+    return resumeExistingAttempt(exam, existingAttempt, now, creditedMs);
   }
 
   if (now < exam.windowStart || now > exam.windowEnd) {
@@ -256,6 +277,7 @@ export async function POST(
     throw err;
   }
 
+  invalidateCacheTags("exams", "monitor", "grading");
   await broadcastExamEvent(exam.id, "attempt_started", {
     attemptId: created.id,
     candidateName: auth.user.name,
@@ -271,15 +293,18 @@ export async function POST(
       instructions: exam.instructions,
       durationMinutes: exam.durationMinutes,
     },
-    attempt: {
-      id: created.id,
-      examId: created.examId,
-      status: created.status,
-      startedAt: created.startedAt.toISOString(),
-      serverExpiresAt: created.serverExpiresAt.toISOString(),
-      totalPossibleMarks,
-      items: stripAnswerKeys(snapshots),
-      answers: {},
-    },
+      attempt: {
+        id: created.id,
+        examId: created.examId,
+        status: created.status,
+        startedAt: created.startedAt.toISOString(),
+        serverExpiresAt: created.serverExpiresAt.toISOString(),
+        autoPausedMs: 0,
+        autoPauseCapMs: getAttemptAutoPauseCapMs(exam.durationMinutes),
+        creditedMs: 0,
+        totalPossibleMarks,
+        items: stripAnswerKeys(snapshots),
+        answers: {},
+      },
   });
 }

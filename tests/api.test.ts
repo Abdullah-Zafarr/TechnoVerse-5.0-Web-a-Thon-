@@ -234,6 +234,96 @@ test("API: full exam lifecycle, sandbox, bulk import, sync conflict, grace, grad
     }
   }
 
+  // 3b. Warm GET /api/questions cache, then JSON import and verify cache invalidated
+  const preCacheQRes = await fetch(`${BASE_URL}/api/questions`, {
+    headers: { cookie: examinerCookie },
+  });
+  assert.equal(preCacheQRes.status, 200);
+
+  const jsonImportTitle = `JSON-Cache-Check-${Date.now()}`;
+  const jsonImportRes = await fetch(`${BASE_URL}/api/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie: examinerCookie },
+    body: JSON.stringify({
+      kind: "questions",
+      format: "json",
+      examId: exam.id,
+      content: JSON.stringify([
+        {
+          title: jsonImportTitle,
+          prompt: "Verify JSON import invalidates cached question bank.",
+          type: "single_mcq",
+          topic: "Testing",
+          difficulty: "easy",
+          marks: 2,
+          options: [
+            { id: "o1", text: "Invalidates cache" },
+            { id: "o2", text: "Stale forever" },
+          ],
+          correctOptionIds: ["o1"],
+        },
+      ]),
+    }),
+  });
+  assert.equal(jsonImportRes.status, 200);
+  const jsonImpBody = (await jsonImportRes.json()) as {
+    importedCount: number;
+    errors: string[];
+  };
+  assert.equal(jsonImpBody.importedCount, 1);
+  assert.equal(jsonImpBody.errors.length, 0);
+
+  const postCacheQRes = await fetch(`${BASE_URL}/api/questions`, {
+    headers: { cookie: examinerCookie },
+  });
+  assert.equal(postCacheQRes.status, 200);
+  const postCacheQJson = (await postCacheQRes.json()) as {
+    questions: Array<{ id: string; title: string }>;
+  };
+  const importedQRecord = postCacheQJson.questions.find(
+    (q) => q.title === jsonImportTitle
+  );
+  assert.ok(importedQRecord, "JSON-imported question must appear immediately in /api/questions");
+  createdQuestionIds.push(importedQRecord.id);
+
+  // 3c. Warm candidate directory cache, then CSV candidate import and verify cache invalidated
+  const preCandRes = await fetch(`${BASE_URL}/api/admin/users`, {
+    headers: { cookie: examinerCookie },
+  });
+  assert.equal(preCandRes.status, 200);
+
+  const candImportEmail = `imp.cand.${Date.now()}@examguard.edu`;
+  createdUserEmails.push(candImportEmail);
+  const candImportRes = await fetch(`${BASE_URL}/api/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie: examinerCookie },
+    body: JSON.stringify({
+      kind: "candidates",
+      format: "csv",
+      examId: exam.id,
+      content: `name,email\nImported Candidate,${candImportEmail}`,
+    }),
+  });
+  assert.equal(candImportRes.status, 200);
+  const candImpBody = (await candImportRes.json()) as {
+    importedCount: number;
+    errors: string[];
+  };
+  assert.equal(candImpBody.importedCount, 1);
+  assert.equal(candImpBody.errors.length, 0);
+
+  const postCandRes = await fetch(`${BASE_URL}/api/admin/users`, {
+    headers: { cookie: examinerCookie },
+  });
+  assert.equal(postCandRes.status, 200);
+  const postCandJson = (await postCandRes.json()) as {
+    users: Array<{ email: string }>;
+  };
+  assert.ok(
+    postCandJson.users.some((u) => u.email === candImportEmail),
+    "CSV-imported candidate must appear immediately in /api/admin/users"
+  );
+
   // 4. Sandbox preview as examiner (creates no DB attempt)
   const sandboxRes = await fetch(
     `${BASE_URL}/api/exams/${exam.id}/start?sandbox=1`,
@@ -319,7 +409,64 @@ test("API: full exam lifecycle, sandbox, bulk import, sync conflict, grace, grad
   };
   assert.equal(staleJson.conflicts[q1.id]?.serverRevision, 2);
 
-  // 9. Examiner grants outage grace (+5 min) & sends announcement
+  // 9. Heartbeat + bounded outage auto-pause + examiner grace + announcement
+  const hbNormal = await fetch(`${BASE_URL}/api/attempts/${attemptId}/heartbeat`, {
+    method: "POST",
+    headers: { cookie: candCookie },
+  });
+  assert.equal(hbNormal.status, 200);
+  const hbNormalJson = (await hbNormal.json()) as {
+    creditedMs: number;
+    serverExpiresAt: string;
+    autoPauseCapMs: number;
+  };
+  assert.equal(hbNormalJson.creditedMs, 0);
+
+  // Simulate a 40s connection drop before deadline -> server auto-credits bounded gap
+  const beforeOutageExpMs = new Date(hbNormalJson.serverExpiresAt).getTime();
+  await prisma.attempt.update({
+    where: { id: attemptId },
+    data: { lastHeartbeatAt: new Date(Date.now() - 40_000) },
+  });
+  const hbRecovered = await fetch(
+    `${BASE_URL}/api/attempts/${attemptId}/heartbeat`,
+    { method: "POST", headers: { cookie: candCookie } }
+  );
+  assert.equal(hbRecovered.status, 200);
+  const hbRecoveredJson = (await hbRecovered.json()) as {
+    creditedMs: number;
+    autoPausedMs: number;
+    autoPauseCapMs: number;
+    serverExpiresAt: string;
+  };
+  assert.ok(hbRecoveredJson.creditedMs >= 30_000);
+  assert.equal(hbRecoveredJson.autoPausedMs, hbRecoveredJson.creditedMs);
+  assert.ok(
+    new Date(hbRecoveredJson.serverExpiresAt).getTime() > beforeOutageExpMs
+  );
+
+  // Exhaust auto-pause cap -> further outage grants zero extra time
+  await prisma.attempt.update({
+    where: { id: attemptId },
+    data: {
+      autoPausedMs: hbRecoveredJson.autoPauseCapMs,
+      lastHeartbeatAt: new Date(Date.now() - 40_000),
+    },
+  });
+  const expAtCapMs = new Date(hbRecoveredJson.serverExpiresAt).getTime();
+  const hbCapped = await fetch(
+    `${BASE_URL}/api/attempts/${attemptId}/heartbeat`,
+    { method: "POST", headers: { cookie: candCookie } }
+  );
+  assert.equal(hbCapped.status, 200);
+  const hbCappedJson = (await hbCapped.json()) as {
+    creditedMs: number;
+    serverExpiresAt: string;
+  };
+  assert.equal(hbCappedJson.creditedMs, 0);
+  assert.equal(new Date(hbCappedJson.serverExpiresAt).getTime(), expAtCapMs);
+
+  // Examiner grants outage grace (+5 min) & sends announcement
   const graceRes = await fetch(`${BASE_URL}/api/attempts/${attemptId}/grace`, {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie: examinerCookie },

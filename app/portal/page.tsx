@@ -341,7 +341,7 @@ export default function PortalPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-md border border-[#0F766E]/25 bg-[#F0FDFA] px-2.5 py-1 text-xs font-medium text-[#0F766E]">
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-[rgba(15,23,42,0.12)] bg-[#F4F7FB] px-2.5 py-1 text-xs font-medium text-[#334155]">
                     <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>
                       Saved{" "}

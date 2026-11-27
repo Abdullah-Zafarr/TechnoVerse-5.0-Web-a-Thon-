@@ -6,12 +6,13 @@ import {
   gradeObjectiveItem,
 } from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
+import { getOrLoadCached, invalidateCacheTags } from "@/lib/serverCache";
 import type { AttemptItemSnapshot } from "@/lib/types";
 import { manualGradeSchema, safeParseJson } from "@/lib/validation";
 
 const GRADING_EXAM_INCLUDE = {
   examQuestions: { include: { question: true } },
-  _count: { select: { enrollments: true } },
+  enrollments: { select: { id: true } },
   attempts: {
     include: {
       candidate: { select: { name: true, email: true } },
@@ -26,97 +27,125 @@ export async function GET(req: Request) {
   if (auth.error) return auth.error;
 
   const examIdParam = new URL(req.url).searchParams.get("examId");
+  const cacheKey = `grading:${auth.user.role}:${auth.user.id}:${examIdParam ?? "latest"}`;
 
-  const exam = examIdParam
-    ? await prisma.exam.findUnique({
-        where: { id: examIdParam },
-        include: GRADING_EXAM_INCLUDE,
-      })
-    : await prisma.exam.findFirst({
-        where:
-          auth.user.role === "admin"
-            ? undefined
-            : { createdById: auth.user.id },
-        orderBy: { createdAt: "desc" },
-        include: GRADING_EXAM_INCLUDE,
-      });
+  const result = await getOrLoadCached(
+    cacheKey,
+    ["grading"],
+    15_000,
+    async () => {
+      const exam = examIdParam
+        ? await prisma.exam.findUnique({
+            relationLoadStrategy: "join",
+            where: { id: examIdParam },
+            include: GRADING_EXAM_INCLUDE,
+          })
+        : await prisma.exam.findFirst({
+            relationLoadStrategy: "join",
+            where:
+              auth.user.role === "admin"
+                ? undefined
+                : { createdById: auth.user.id },
+            orderBy: { createdAt: "desc" },
+            include: GRADING_EXAM_INCLUDE,
+          });
 
-  if (!exam) {
-    return NextResponse.json({
-      exam: null,
-      attempts: [],
-      summary: null,
-      analytics: [],
-    });
-  }
+      if (!exam) {
+        return {
+          status: 200 as const,
+          body: { exam: null, attempts: [], summary: null, analytics: [] },
+          activeExpiresAt: [] as number[],
+        };
+      }
 
-  if (!canManageExam(auth.user, exam.createdById)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+      if (!canManageExam(auth.user, exam.createdById)) {
+        return {
+          status: 403 as const,
+          body: { error: "Forbidden" },
+          activeExpiresAt: [] as number[],
+        };
+      }
 
-  const now = new Date();
-  const staleIds = exam.attempts
-    .filter((a) => a.status === "in_progress" && now >= a.serverExpiresAt)
-    .map((a) => a.id);
+      const now = new Date();
+      const staleIds = exam.attempts
+        .filter((a) => a.status === "in_progress" && now >= a.serverExpiresAt)
+        .map((a) => a.id);
 
-  let attempts = exam.attempts;
-  if (staleIds.length > 0) {
-    await Promise.all(
-      staleIds.map((id) => finalizeAttemptInTx(id, "expired"))
-    );
-    attempts = await prisma.attempt.findMany({
-      where: { examId: exam.id },
-      include: {
-        candidate: { select: { name: true, email: true } },
-        answers: true,
-      },
-      orderBy: { startedAt: "desc" },
-    });
-  }
+      let attempts = exam.attempts;
+      if (staleIds.length > 0) {
+        await Promise.all(
+          staleIds.map((id) => finalizeAttemptInTx(id, "expired"))
+        );
+        attempts = await prisma.attempt.findMany({
+          relationLoadStrategy: "join",
+          where: { examId: exam.id },
+          include: {
+            candidate: { select: { name: true, email: true } },
+            answers: true,
+          },
+          orderBy: { startedAt: "desc" },
+        });
+      }
 
-  const { summary, questionRows } = computeExamAnalytics(
-    exam.examQuestions.map((eq) => eq.question),
-    exam._count.enrollments,
-    attempts
+      const { summary, questionRows } = computeExamAnalytics(
+        exam.examQuestions.map((eq) => eq.question),
+        exam.enrollments.length,
+        attempts
+      );
+
+      const activeExpiresAt = attempts
+        .filter((a) => a.status === "in_progress")
+        .map((a) => a.serverExpiresAt.getTime());
+
+      return {
+        status: 200 as const,
+        activeExpiresAt,
+        body: {
+          exam: {
+            id: exam.id,
+            code: exam.code,
+            title: exam.title,
+            resultsPublished: exam.resultsPublished,
+          },
+          summary,
+          analytics: questionRows,
+          attempts: attempts.map((att) => ({
+            id: att.id,
+            candidateId: att.candidateId,
+            candidateName: att.candidate.name,
+            candidateEmail: att.candidate.email,
+            status: att.status,
+            gradingState: att.gradingState,
+            submittedAt: att.submittedAt?.toISOString() ?? null,
+            totalPossibleMarks: att.totalPossibleMarks,
+            totalAwardedMarks: att.totalAwardedMarks,
+            verificationCode: att.verificationCode,
+            items: att.itemsSnapshot as unknown as AttemptItemSnapshot[],
+            answers: Object.fromEntries(
+              att.answers.map((a) => [
+                a.questionId,
+                {
+                  selectedOptionIds: Array.isArray(a.selectedOptionIds)
+                    ? (a.selectedOptionIds as string[])
+                    : [],
+                  writtenText: a.writtenText,
+                  autoScore: a.autoScore,
+                  manualScore: a.manualScore,
+                  manualFeedback: a.manualFeedback,
+                },
+              ])
+            ),
+          })),
+        },
+      };
+    },
+    (cached) => {
+      const nowMs = Date.now();
+      return cached.activeExpiresAt.every((exp) => exp > nowMs);
+    }
   );
 
-  return NextResponse.json({
-    exam: {
-      id: exam.id,
-      code: exam.code,
-      title: exam.title,
-      resultsPublished: exam.resultsPublished,
-    },
-    summary,
-    analytics: questionRows,
-    attempts: attempts.map((att) => ({
-      id: att.id,
-      candidateId: att.candidateId,
-      candidateName: att.candidate.name,
-      candidateEmail: att.candidate.email,
-      status: att.status,
-      gradingState: att.gradingState,
-      submittedAt: att.submittedAt?.toISOString() ?? null,
-      totalPossibleMarks: att.totalPossibleMarks,
-      totalAwardedMarks: att.totalAwardedMarks,
-      verificationCode: att.verificationCode,
-      items: att.itemsSnapshot as unknown as AttemptItemSnapshot[],
-      answers: Object.fromEntries(
-        att.answers.map((a) => [
-          a.questionId,
-          {
-            selectedOptionIds: Array.isArray(a.selectedOptionIds)
-              ? (a.selectedOptionIds as string[])
-              : [],
-            writtenText: a.writtenText,
-            autoScore: a.autoScore,
-            manualScore: a.manualScore,
-            manualFeedback: a.manualFeedback,
-          },
-        ])
-      ),
-    })),
-  });
+  return NextResponse.json(result.body, { status: result.status });
 }
 
 export async function POST(req: Request) {
@@ -222,6 +251,7 @@ export async function POST(req: Request) {
     return updated;
   }, { maxWait: 10_000, timeout: 20_000 });
 
+  invalidateCacheTags("grading", "exams", "monitor", "verify");
   return NextResponse.json({
     ok: true,
     gradingState: result.gradingState,

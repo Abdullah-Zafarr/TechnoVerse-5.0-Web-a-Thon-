@@ -7,6 +7,7 @@ import {
   sanitizeUser,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrLoadCached, invalidateCacheTags } from "@/lib/serverCache";
 import { createUserSchema, safeParseJson, updateUserSchema } from "@/lib/validation";
 
 const SAFE_USER_SELECT = {
@@ -23,32 +24,48 @@ export async function GET() {
   if (auth.error) return auth.error;
 
   if (auth.user.role === "examiner") {
-    const candidates = await prisma.user.findMany({
-      where: { role: "candidate" },
-      select: SAFE_USER_SELECT,
-      orderBy: { createdAt: "desc" },
-    });
+    const users = await getOrLoadCached(
+      "users:candidates",
+      ["users"],
+      25_000,
+      async () => {
+        const candidates = await prisma.user.findMany({
+          where: { role: "candidate" },
+          select: SAFE_USER_SELECT,
+          orderBy: { createdAt: "desc" },
+        });
+        return candidates.map(sanitizeUser);
+      }
+    );
     return NextResponse.json({
-      users: candidates.map(sanitizeUser),
+      users,
       auditLogs: [],
     });
   }
 
-  const [users, auditLogs] = await Promise.all([
-    prisma.user.findMany({
-      select: SAFE_USER_SELECT,
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
-  ]);
+  const data = await getOrLoadCached(
+    "users:admin_all",
+    ["users"],
+    15_000,
+    async () => {
+      const [users, auditLogs] = await Promise.all([
+        prisma.user.findMany({
+          select: SAFE_USER_SELECT,
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
+      ]);
+      return {
+        users: users.map(sanitizeUser),
+        auditLogs: auditLogs.map((l) => ({
+          ...l,
+          timestamp: l.createdAt.toISOString(),
+        })),
+      };
+    }
+  );
 
-  return NextResponse.json({
-    users: users.map(sanitizeUser),
-    auditLogs: auditLogs.map((l) => ({
-      ...l,
-      timestamp: l.createdAt.toISOString(),
-    })),
-  });
+  return NextResponse.json(data);
 }
 
 export async function POST(req: Request) {
@@ -92,6 +109,7 @@ export async function POST(req: Request) {
     return u;
   }, { maxWait: 10_000, timeout: 15_000 });
 
+  invalidateCacheTags("users");
   return NextResponse.json({ user: sanitizeUser(created) }, { status: 201 });
 }
 
@@ -157,5 +175,6 @@ export async function PATCH(req: Request) {
     invalidateUserCache(safeUpdated.id);
   }
 
+  invalidateCacheTags("users");
   return NextResponse.json({ user: safeUpdated });
 }

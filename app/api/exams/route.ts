@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { canManageExam, requireRole } from "@/lib/auth";
-import { computeStratifiedQuotas, finalizeAttemptInTx } from "@/lib/grading";
+import {
+  computeStratifiedQuotas,
+  finalizeAttemptInTx,
+  shouldAutoExpireAttempt,
+} from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
+import { getOrLoadCached, invalidateCacheTags } from "@/lib/serverCache";
 import type { ExamStatus } from "@/lib/types";
 import {
   createExamSchema,
@@ -43,161 +48,214 @@ export async function GET() {
   const now = new Date();
 
   if (auth.user.role === "candidate") {
-    const enrollments = await prisma.enrollment.findMany({
-      where: {
-        candidateId: auth.user.id,
-        exam: { status: { not: "draft" } },
-      },
-      include: {
-        exam: {
+    const payload = await getOrLoadCached(
+      `exams:cand:${auth.user.id}`,
+      ["exams"],
+      20_000,
+      async () => {
+        const loadNow = new Date();
+        const enrollments = await prisma.enrollment.findMany({
+          relationLoadStrategy: "join",
+          where: {
+            candidateId: auth.user.id,
+            exam: { status: { not: "draft" } },
+          },
           include: {
-            _count: { select: { examQuestions: true } },
-            attempts: {
-              where: { candidateId: auth.user.id },
-              select: {
-                id: true,
-                status: true,
-                gradingState: true,
-                startedAt: true,
-                submittedAt: true,
-                serverExpiresAt: true,
-                totalPossibleMarks: true,
-                totalAwardedMarks: true,
-                verificationCode: true,
+            exam: {
+              include: {
+                examQuestions: { select: { id: true } },
+                attempts: {
+                  where: { candidateId: auth.user.id },
+                  select: {
+                    id: true,
+                    status: true,
+                    gradingState: true,
+                    startedAt: true,
+                    submittedAt: true,
+                    serverExpiresAt: true,
+                    lastHeartbeatAt: true,
+                    autoPausedMs: true,
+                    totalPossibleMarks: true,
+                    totalAwardedMarks: true,
+                    verificationCode: true,
+                  },
+                },
               },
             },
           },
-        },
+          orderBy: { exam: { windowStart: "asc" } },
+        });
+
+        const staleAttempts = enrollments
+          .map(({ exam }) => ({
+            att: exam.attempts[0],
+            durationMinutes: exam.durationMinutes,
+          }))
+          .filter(
+            (
+              entry
+            ): entry is {
+              att: NonNullable<typeof entry.att>;
+              durationMinutes: number;
+            } =>
+              Boolean(entry.att) &&
+              entry.att.status === "in_progress" &&
+              shouldAutoExpireAttempt({
+                nowMs: loadNow.getTime(),
+                lastHeartbeatAtMs: entry.att.lastHeartbeatAt.getTime(),
+                serverExpiresAtMs: entry.att.serverExpiresAt.getTime(),
+                autoPausedMs: entry.att.autoPausedMs,
+                durationMinutes: entry.durationMinutes,
+              })
+          )
+          .map((entry) => entry.att);
+
+        const finalizedById = new Map<
+          string,
+          NonNullable<Awaited<ReturnType<typeof finalizeAttemptInTx>>>
+        >();
+        if (staleAttempts.length > 0) {
+          const doneList = await Promise.all(
+            staleAttempts.map((att) => finalizeAttemptInTx(att.id, "expired"))
+          );
+          for (const done of doneList) {
+            if (done) finalizedById.set(done.id, done);
+          }
+        }
+
+        const exams = enrollments.map(({ exam }) => {
+          const rawAttempt = exam.attempts[0] ?? null;
+          const myAttempt =
+            rawAttempt && finalizedById.has(rawAttempt.id)
+              ? finalizedById.get(rawAttempt.id)!
+              : rawAttempt;
+          const hasActiveGraceAttempt =
+            myAttempt?.status === "in_progress" &&
+            loadNow < myAttempt.serverExpiresAt;
+          const canEnter =
+            exam.status === "ongoing" &&
+            ((loadNow >= exam.windowStart && loadNow <= exam.windowEnd) ||
+              hasActiveGraceAttempt) &&
+            (!myAttempt || myAttempt.status === "in_progress");
+
+          return {
+            id: exam.id,
+            code: exam.code,
+            title: exam.title,
+            instructions: exam.instructions,
+            status: exam.status,
+            durationMinutes: exam.durationMinutes,
+            totalMarks: exam.totalMarks,
+            windowStart: exam.windowStart.toISOString(),
+            windowEnd: exam.windowEnd.toISOString(),
+            questionsPerPaper:
+              exam.questionsPerPaper ?? exam.examQuestions.length,
+            resultsPublished: exam.resultsPublished,
+            canEnter,
+            myAttempt: myAttempt
+              ? {
+                  id: myAttempt.id,
+                  status: myAttempt.status,
+                  gradingState: myAttempt.gradingState,
+                  startedAt: myAttempt.startedAt.toISOString(),
+                  submittedAt: myAttempt.submittedAt?.toISOString() ?? null,
+                  serverExpiresAt: myAttempt.serverExpiresAt.toISOString(),
+                  totalPossibleMarks: myAttempt.totalPossibleMarks,
+                  totalAwardedMarks: exam.resultsPublished
+                    ? myAttempt.totalAwardedMarks
+                    : null,
+                  verificationCode: exam.resultsPublished
+                    ? myAttempt.verificationCode
+                    : null,
+                }
+              : null,
+          };
+        });
+
+        return { exams };
       },
-      orderBy: { exam: { windowStart: "asc" } },
-    });
-
-    const staleAttempts = enrollments
-      .map(({ exam }) => exam.attempts[0])
-      .filter(
-        (att): att is NonNullable<typeof att> =>
-          Boolean(att) &&
-          att.status === "in_progress" &&
-          now >= att.serverExpiresAt
-      );
-
-    const finalizedById = new Map<
-      string,
-      NonNullable<Awaited<ReturnType<typeof finalizeAttemptInTx>>>
-    >();
-    if (staleAttempts.length > 0) {
-      const doneList = await Promise.all(
-        staleAttempts.map((att) => finalizeAttemptInTx(att.id, "expired"))
-      );
-      for (const done of doneList) {
-        if (done) finalizedById.set(done.id, done);
+      (cached) => {
+        const nowMs = Date.now();
+        return cached.exams.every(
+          (e) =>
+            !(
+              e.myAttempt?.status === "in_progress" &&
+              new Date(e.myAttempt.serverExpiresAt).getTime() <= nowMs
+            )
+        );
       }
-    }
+    );
 
-    const exams = enrollments.map(({ exam }) => {
-      const rawAttempt = exam.attempts[0] ?? null;
-      const myAttempt =
-        rawAttempt && finalizedById.has(rawAttempt.id)
-          ? finalizedById.get(rawAttempt.id)!
-          : rawAttempt;
-      const hasActiveGraceAttempt =
-        myAttempt?.status === "in_progress" && now < myAttempt.serverExpiresAt;
-      const canEnter =
-        exam.status === "ongoing" &&
-        ((now >= exam.windowStart && now <= exam.windowEnd) ||
-          hasActiveGraceAttempt) &&
-        (!myAttempt || myAttempt.status === "in_progress");
-
-      return {
-        id: exam.id,
-        code: exam.code,
-        title: exam.title,
-        instructions: exam.instructions,
-        status: exam.status,
-        durationMinutes: exam.durationMinutes,
-        totalMarks: exam.totalMarks,
-        windowStart: exam.windowStart.toISOString(),
-        windowEnd: exam.windowEnd.toISOString(),
-        questionsPerPaper: exam.questionsPerPaper ?? exam._count.examQuestions,
-        resultsPublished: exam.resultsPublished,
-        canEnter,
-        myAttempt: myAttempt
-          ? {
-              id: myAttempt.id,
-              status: myAttempt.status,
-              gradingState: myAttempt.gradingState,
-              startedAt: myAttempt.startedAt.toISOString(),
-              submittedAt: myAttempt.submittedAt?.toISOString() ?? null,
-              serverExpiresAt: myAttempt.serverExpiresAt.toISOString(),
-              totalPossibleMarks: myAttempt.totalPossibleMarks,
-              totalAwardedMarks: exam.resultsPublished
-                ? myAttempt.totalAwardedMarks
-                : null,
-              verificationCode: exam.resultsPublished
-                ? myAttempt.verificationCode
-                : null,
-            }
-          : null,
-      };
+    return NextResponse.json({
+      exams: payload.exams,
+      serverNow: now.toISOString(),
     });
-
-    return NextResponse.json({ exams, serverNow: now.toISOString() });
   }
 
-  const exams = await prisma.exam.findMany({
-    where:
-      auth.user.role === "admin"
-        ? undefined
-        : { createdById: auth.user.id },
-    include: {
-      examQuestions: {
-        orderBy: { position: "asc" },
-        select: {
-          questionId: true,
-          question: { select: { difficulty: true } },
+  const staffExams = await getOrLoadCached(
+    `exams:staff:${auth.user.role}:${auth.user.id}`,
+    ["exams"],
+    20_000,
+    async () => {
+      const exams = await prisma.exam.findMany({
+        relationLoadStrategy: "join",
+        where:
+          auth.user.role === "admin"
+            ? undefined
+            : { createdById: auth.user.id },
+        include: {
+          examQuestions: {
+            orderBy: { position: "asc" },
+            select: {
+              questionId: true,
+              question: { select: { difficulty: true } },
+            },
+          },
+          enrollments: { select: { candidateId: true } },
+          attempts: { select: { id: true } },
         },
-      },
-      enrollments: { select: { candidateId: true } },
-      _count: { select: { attempts: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+        orderBy: { createdAt: "desc" },
+      });
+
+      return exams.map((e) => {
+        const paperCount = e.questionsPerPaper ?? e.examQuestions.length;
+        const poolQuestions = e.examQuestions.map((eq) => eq.question);
+        const poolDifficultyCounts = computeStratifiedQuotas(
+          poolQuestions,
+          poolQuestions.length
+        );
+        const stratifiedQuotas = computeStratifiedQuotas(
+          poolQuestions,
+          paperCount
+        );
+        return {
+          id: e.id,
+          code: e.code,
+          title: e.title,
+          instructions: e.instructions,
+          status: e.status,
+          durationMinutes: e.durationMinutes,
+          totalMarks: e.totalMarks,
+          windowStart: e.windowStart.toISOString(),
+          windowEnd: e.windowEnd.toISOString(),
+          questionsPerPaper: paperCount,
+          randomizeQuestions: e.randomizeQuestions,
+          randomizeOptions: e.randomizeOptions,
+          stratifiedBalanced:
+            e.randomizeQuestions && paperCount < e.examQuestions.length,
+          poolDifficultyCounts,
+          stratifiedQuotas,
+          resultsPublished: e.resultsPublished,
+          questionIds: e.examQuestions.map((eq) => eq.questionId),
+          enrolledCandidateIds: e.enrollments.map((en) => en.candidateId),
+          attemptCount: e.attempts.length,
+        };
+      });
+    }
+  );
 
   return NextResponse.json({
-    exams: exams.map((e) => {
-      const paperCount = e.questionsPerPaper ?? e.examQuestions.length;
-      const poolQuestions = e.examQuestions.map((eq) => eq.question);
-      const poolDifficultyCounts = computeStratifiedQuotas(
-        poolQuestions,
-        poolQuestions.length
-      );
-      const stratifiedQuotas = computeStratifiedQuotas(
-        poolQuestions,
-        paperCount
-      );
-      return {
-        id: e.id,
-        code: e.code,
-        title: e.title,
-        instructions: e.instructions,
-        status: e.status,
-        durationMinutes: e.durationMinutes,
-        totalMarks: e.totalMarks,
-        windowStart: e.windowStart.toISOString(),
-        windowEnd: e.windowEnd.toISOString(),
-        questionsPerPaper: paperCount,
-        randomizeQuestions: e.randomizeQuestions,
-        randomizeOptions: e.randomizeOptions,
-        stratifiedBalanced:
-          e.randomizeQuestions && paperCount < e.examQuestions.length,
-        poolDifficultyCounts,
-        stratifiedQuotas,
-        resultsPublished: e.resultsPublished,
-        questionIds: e.examQuestions.map((eq) => eq.questionId),
-        enrolledCandidateIds: e.enrollments.map((en) => en.candidateId),
-        attemptCount: e._count.attempts,
-      };
-    }),
+    exams: staffExams,
     serverNow: now.toISOString(),
   });
 }
@@ -289,6 +347,7 @@ export async function POST(req: Request) {
     },
   });
 
+  invalidateCacheTags("exams", "grading", "monitor");
   return NextResponse.json({ exam: created }, { status: 201 });
 }
 
@@ -513,5 +572,6 @@ export async function PATCH(req: Request) {
     return exam;
   }, { maxWait: 10_000, timeout: 20_000 });
 
+  invalidateCacheTags("exams", "grading", "monitor", "verify");
   return NextResponse.json({ exam: updated });
 }

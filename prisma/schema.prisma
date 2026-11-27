@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -158,6 +159,7 @@ model Attempt {
   serverExpiresAt    DateTime      @map("server_expires_at")
   submittedAt        DateTime?     @map("submitted_at")
   lastHeartbeatAt    DateTime      @default(now()) @map("last_heartbeat_at")
+  autoPausedMs       Int           @default(0) @map("auto_paused_ms")
   itemsSnapshot      Json          @map("items_snapshot")
   totalPossibleMarks Float         @default(0) @map("total_possible_marks")
   totalAwardedMarks  Float         @default(0) @map("total_awarded_marks")

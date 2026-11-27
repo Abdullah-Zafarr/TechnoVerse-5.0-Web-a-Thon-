@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { canManageExam, requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { broadcastExamEvent } from "@/lib/realtime";
+import { invalidateCacheTags } from "@/lib/serverCache";
 import { graceGrantSchema, safeParseJson } from "@/lib/validation";
 
 /**
@@ -97,6 +98,7 @@ export async function POST(
     return saved;
   }, { maxWait: 10_000, timeout: 15_000 });
 
+  invalidateCacheTags("exams", "monitor", "grading");
   await broadcastExamEvent(attempt.examId, "attempt_grace_granted", {
     attemptId: updated.id,
     status: updated.status,

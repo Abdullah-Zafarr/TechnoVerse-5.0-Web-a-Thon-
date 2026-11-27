@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { canManageExam, requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getOrLoadCached, invalidateCacheTags } from "@/lib/serverCache";
 import type { QuestionOption } from "@/lib/types";
 import {
   createQuestionSchema,
@@ -13,9 +14,12 @@ export async function GET() {
   const auth = await requireRole(["admin", "examiner"]);
   if (auth.error) return auth.error;
 
-  const questions = await prisma.question.findMany({
-    orderBy: { createdAt: "desc" },
-  });
+  const questions = await getOrLoadCached(
+    "questions:all",
+    ["questions"],
+    25_000,
+    () => prisma.question.findMany({ orderBy: { createdAt: "desc" } })
+  );
   return NextResponse.json({ questions });
 }
 
@@ -55,6 +59,7 @@ export async function POST(req: Request) {
     },
   });
 
+  invalidateCacheTags("questions", "exams", "grading");
   return NextResponse.json({ question: created }, { status: 201 });
 }
 
@@ -128,6 +133,7 @@ export async function PATCH(req: Request) {
     },
   });
 
+  invalidateCacheTags("questions", "exams", "grading");
   return NextResponse.json({ question: updated });
 }
 
@@ -163,5 +169,6 @@ export async function DELETE(req: Request) {
   }
 
   await prisma.question.delete({ where: { id: questionId } });
+  invalidateCacheTags("questions", "exams", "grading");
   return NextResponse.json({ ok: true, deletedId: questionId });
 }

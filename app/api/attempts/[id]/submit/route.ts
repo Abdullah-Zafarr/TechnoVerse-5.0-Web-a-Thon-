@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
-import { finalizeAttemptAtomic } from "@/lib/grading";
+import {
+  finalizeAttemptAtomic,
+  reconcileAttemptHeartbeat,
+} from "@/lib/grading";
 import { prisma } from "@/lib/prisma";
 import { broadcastExamEvent } from "@/lib/realtime";
+import { invalidateCacheTags } from "@/lib/serverCache";
 
 export async function POST(
   _req: Request,
@@ -29,7 +33,12 @@ export async function POST(
   }
 
   const now = new Date();
-  const reason = now > attempt.serverExpiresAt ? "expired" : "submitted";
+  const reconciled = await reconcileAttemptHeartbeat(attempt.id, now);
+  const effectiveExpiresAt =
+    reconciled.kind === "ok" || reconciled.kind === "expired"
+      ? reconciled.serverExpiresAt
+      : attempt.serverExpiresAt;
+  const reason = now > effectiveExpiresAt ? "expired" : "submitted";
   const { attempt: finalized, finalizedNow } = await finalizeAttemptAtomic(
     attempt.id,
     reason
@@ -44,6 +53,7 @@ export async function POST(
     );
   }
 
+  invalidateCacheTags("exams", "monitor", "grading", "verify");
   await broadcastExamEvent(attempt.examId, "attempt_submitted", {
     attemptId: attempt.id,
   });

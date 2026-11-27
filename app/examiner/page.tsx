@@ -89,6 +89,8 @@ interface MonitorAttempt {
   totalQuestions: number;
   serverExpiresAt?: string;
   lastHeartbeatAt?: string;
+  autoPausedMs?: number;
+  autoPauseCapMs?: number;
   incidents: { id: string; type: string; detail: string; timestamp: string }[];
 }
 
@@ -164,6 +166,36 @@ const SAMPLE_QUESTIONS_JSON = JSON.stringify(
   null,
   2
 );
+
+const SAMPLE_CANDIDATES_JSON = JSON.stringify(
+  [
+    { name: "Zainab Malik", email: "zainab@examguard.edu" },
+    { name: "Usman Tariq", email: "usman@examguard.edu" },
+  ],
+  null,
+  2
+);
+
+function getImportSample(
+  kind: "questions" | "candidates",
+  format: "csv" | "json"
+): string {
+  if (kind === "questions") {
+    return format === "json" ? SAMPLE_QUESTIONS_JSON : SAMPLE_QUESTIONS_CSV;
+  }
+  return format === "json" ? SAMPLE_CANDIDATES_JSON : SAMPLE_CANDIDATES_CSV;
+}
+
+function isBuiltInImportSample(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  return [
+    SAMPLE_QUESTIONS_CSV,
+    SAMPLE_CANDIDATES_CSV,
+    SAMPLE_QUESTIONS_JSON,
+    SAMPLE_CANDIDATES_JSON,
+  ].some((sample) => sample.trim() === trimmed);
+}
 
 function toLocalDatetimeInput(iso: string): string {
   const d = new Date(iso);
@@ -287,6 +319,7 @@ export default function ExaminerPage() {
   const [importFormat, setImportFormat] = useState<"csv" | "json">("csv");
   const [importExamId, setImportExamId] = useState("");
   const [importContent, setImportContent] = useState(SAMPLE_QUESTIONS_CSV);
+  const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{
     importedCount: number;
     errors: string[];
@@ -356,7 +389,6 @@ export default function ExaminerPage() {
     }
     const firstExamId = exData.exams[0]?.id;
     if (firstExamId) {
-      setImportExamId((prev) => prev || firstExamId);
       setMonitorExamId((prev) => prev || firstExamId);
       setGradeExamId((prev) => prev || firstExamId);
     }
@@ -627,30 +659,48 @@ export default function ExaminerPage() {
     e.preventDefault();
     setImportResult(null);
     setError(null);
-    const res = await fetch("/api/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        kind: importKind,
-        format: importFormat,
-        content: importContent,
-        examId: importExamId || undefined,
-      }),
-    });
-    const data = (await res.json()) as {
-      importedCount?: number;
-      errors?: string[];
-      error?: string;
-    };
-    if (!res.ok) {
-      setError(data.error ?? "Import failed");
+    setNotice(null);
+
+    if (!importContent.trim()) {
+      setError("Paste or upload CSV/JSON content before importing.");
       return;
     }
-    setImportResult({
-      importedCount: data.importedCount ?? 0,
-      errors: data.errors ?? [],
-    });
-    await loadBase(true);
+
+    setImporting(true);
+    try {
+      const res = await fetch("/api/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: importKind,
+          format: importFormat,
+          content: importContent,
+          examId: importExamId || undefined,
+        }),
+      });
+      const data = (await res.json()) as {
+        importedCount?: number;
+        errors?: string[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(data.error ?? "Import failed");
+        return;
+      }
+      const importedCount = data.importedCount ?? 0;
+      const errors = data.errors ?? [];
+      setImportResult({ importedCount, errors });
+      if (importedCount > 0) {
+        setNotice(
+          `Imported ${importedCount} ${importKind === "questions" ? "question(s)" : "candidate(s)"}.`
+        );
+        await loadBase(true);
+      }
+    } catch {
+      setError("Network error while importing records.");
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function handleSendAnnouncement(e: React.FormEvent) {
@@ -1718,6 +1768,9 @@ export default function ExaminerPage() {
                         setImportKind("questions");
                         setImportFormat("csv");
                         setImportContent(SAMPLE_QUESTIONS_CSV);
+                        setImportResult(null);
+                        setError(null);
+                        setNotice(null);
                       }}
                       className="min-h-[36px] cursor-pointer rounded-md border border-[rgba(15,23,42,0.14)] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
                     >
@@ -1729,6 +1782,9 @@ export default function ExaminerPage() {
                         setImportKind("candidates");
                         setImportFormat("csv");
                         setImportContent(SAMPLE_CANDIDATES_CSV);
+                        setImportResult(null);
+                        setError(null);
+                        setNotice(null);
                       }}
                       className="min-h-[36px] cursor-pointer rounded-md border border-[rgba(15,23,42,0.14)] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
                     >
@@ -1740,10 +1796,27 @@ export default function ExaminerPage() {
                         setImportKind("questions");
                         setImportFormat("json");
                         setImportContent(SAMPLE_QUESTIONS_JSON);
+                        setImportResult(null);
+                        setError(null);
+                        setNotice(null);
                       }}
                       className="min-h-[36px] cursor-pointer rounded-md border border-[rgba(15,23,42,0.14)] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
                     >
-                      Load JSON sample
+                      Load questions JSON sample
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportKind("candidates");
+                        setImportFormat("json");
+                        setImportContent(SAMPLE_CANDIDATES_JSON);
+                        setImportResult(null);
+                        setError(null);
+                        setNotice(null);
+                      }}
+                      className="min-h-[36px] cursor-pointer rounded-md border border-[rgba(15,23,42,0.14)] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[#EEF2F6]"
+                    >
+                      Load candidates JSON sample
                     </button>
                   </div>
                 </div>
@@ -1765,11 +1838,23 @@ export default function ExaminerPage() {
                             | "questions"
                             | "candidates";
                           setImportKind(val);
-                          setImportContent(
-                            val === "questions"
-                              ? SAMPLE_QUESTIONS_CSV
-                              : SAMPLE_CANDIDATES_CSV
-                          );
+                          setImportResult(null);
+                          setError(null);
+                          if (isBuiltInImportSample(importContent)) {
+                            setImportContent(getImportSample(val, importFormat));
+                          }
+                          if (val === "questions" && importExamId) {
+                            const selected = exams.find(
+                              (ex) => ex.id === importExamId
+                            );
+                            if (
+                              selected &&
+                              (selected.status === "ongoing" ||
+                                selected.status === "completed")
+                            ) {
+                              setImportExamId("");
+                            }
+                          }
                         }}
                         className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm"
                       >
@@ -1787,9 +1872,15 @@ export default function ExaminerPage() {
                       <select
                         id="imp-fmt"
                         value={importFormat}
-                        onChange={(e) =>
-                          setImportFormat(e.target.value as "csv" | "json")
-                        }
+                        onChange={(e) => {
+                          const fmt = e.target.value as "csv" | "json";
+                          setImportFormat(fmt);
+                          setImportResult(null);
+                          setError(null);
+                          if (isBuiltInImportSample(importContent)) {
+                            setImportContent(getImportSample(importKind, fmt));
+                          }
+                        }}
                         className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm"
                       >
                         <option value="csv">CSV</option>
@@ -1809,12 +1900,23 @@ export default function ExaminerPage() {
                         onChange={(e) => setImportExamId(e.target.value)}
                         className="mt-1 min-h-[40px] w-full rounded-lg border border-[rgba(15,23,42,0.16)] bg-white px-3 py-2 text-sm"
                       >
-                        <option value="">None</option>
-                        {exams.map((ex) => (
-                          <option key={ex.id} value={ex.id}>
-                            {ex.code}: {ex.title}
-                          </option>
-                        ))}
+                        <option value="">None (bank / directory only)</option>
+                        {exams.map((ex) => {
+                          const lockedForQuestions =
+                            importKind === "questions" &&
+                            (ex.status === "ongoing" ||
+                              ex.status === "completed");
+                          return (
+                            <option
+                              key={ex.id}
+                              value={ex.id}
+                              disabled={lockedForQuestions}
+                            >
+                              {ex.code}: {ex.title} ({ex.status}
+                              {lockedForQuestions ? " - locked" : ""})
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   </div>
@@ -1831,15 +1933,29 @@ export default function ExaminerPage() {
                       type="file"
                       accept=".csv,.json,.txt"
                       onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.name.toLowerCase().endsWith(".json")) {
-                            setImportFormat("json");
-                          } else if (file.name.toLowerCase().endsWith(".csv")) {
-                            setImportFormat("csv");
-                          }
-                          setImportContent(await file.text());
+                        const input = e.currentTarget;
+                        const file = input.files?.[0];
+                        if (!file) return;
+                        const rawText = (await file.text()).replace(/^\uFEFF/, "");
+                        const lowerName = file.name.toLowerCase();
+                        const trimmed = rawText.trimStart();
+                        if (lowerName.endsWith(".json")) {
+                          setImportFormat("json");
+                        } else if (lowerName.endsWith(".csv")) {
+                          setImportFormat("csv");
+                        } else if (
+                          trimmed.startsWith("[") ||
+                          trimmed.startsWith("{")
+                        ) {
+                          setImportFormat("json");
+                        } else {
+                          setImportFormat("csv");
                         }
+                        setImportContent(rawText);
+                        setImportResult(null);
+                        setError(null);
+                        setNotice(null);
+                        input.value = "";
                       }}
                       className="mt-1.5 block w-full cursor-pointer rounded-lg border border-dashed border-[rgba(15,23,42,0.22)] bg-[#F6F8FA] p-2.5 text-xs text-[#475569]"
                     />
@@ -1854,15 +1970,24 @@ export default function ExaminerPage() {
 
                   <button
                     type="submit"
-                    className="min-h-[40px] cursor-pointer rounded-lg bg-[#1D4ED8] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF]"
+                    disabled={importing}
+                    className="min-h-[40px] cursor-pointer rounded-lg bg-[#1D4ED8] px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-[#1E40AF] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Validate and import
+                    {importing ? "Importing..." : "Validate and import"}
                   </button>
                 </form>
 
                 {importResult && (
                   <div className="mt-4 rounded-xl border border-[rgba(15,23,42,0.12)] bg-[#F6F8FA] p-4 text-sm">
-                    <p className="font-semibold text-[#0F766E]">
+                    <p
+                      className={`font-semibold ${
+                        importResult.importedCount === 0
+                          ? "text-[#B91C1C]"
+                          : importResult.errors.length > 0
+                            ? "text-[#B45309]"
+                            : "text-[#0F766E]"
+                      }`}
+                    >
                       Imported{" "}
                       <span className="font-mono tabular-nums">
                         {importResult.importedCount}
@@ -1968,6 +2093,15 @@ export default function ExaminerPage() {
                                       {new Date(
                                         att.serverExpiresAt
                                       ).toLocaleTimeString()}
+                                    </span>
+                                  </p>
+                                )}
+                                {(att.autoPausedMs ?? 0) > 0 && (
+                                  <p className="mt-0.5 text-[#B45309]">
+                                    Auto-paused{" "}
+                                    <span className="font-mono tabular-nums">
+                                      {Math.round((att.autoPausedMs ?? 0) / 1000)}s /{" "}
+                                      {Math.round((att.autoPauseCapMs ?? 300_000) / 1000)}s
                                     </span>
                                   </p>
                                 )}
