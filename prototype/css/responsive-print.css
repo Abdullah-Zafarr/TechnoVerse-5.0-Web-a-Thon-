@@ -1,0 +1,4 @@
+@media(max-width:860px){.login{grid-template-columns:1fr}.login>.l{padding:30px}.ws{grid-template-columns:1fr}header{padding:10px 14px}main{padding:18px 14px 50px}}
+@media print{header,.noprint,.btn{display:none!important}body{background:#fff}.card{border-color:#ccc}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
