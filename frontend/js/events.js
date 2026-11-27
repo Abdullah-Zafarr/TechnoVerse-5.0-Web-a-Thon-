@@ -34,3 +34,5 @@ document.addEventListener("input",ev=>{const t=ev.target,k=t.dataset.in;if(!k)re
  else if(k==="fs"){S.prefs.fs=+t.value;document.documentElement.style.setProperty("--fs",t.value+"px");save()}
  else if(k==="role"){S.users[t.dataset.id].r=t.value;save();toast("Role updated")}
  else if(k==="rx"){RX=+t.value;render()}});
+document.addEventListener("change",ev=>{if(ev.target.id==="fi"){const f=ev.target.files[0];f&&f.text().then(t=>$("#csv").value=t)}if(ev.target.id==="c1"||ev.target.id==="c2"){$("#go").disabled=!($("#c1").checked&&$("#c2").checked)}if(ev.target.dataset.in==="role"||ev.target.dataset.in==="rx")ev.target.dispatchEvent(new Event("input",{bubbles:true}))});
+document.addEventListener("click",ev=>{const r=ev.target.closest("#rs button");if(r){$$("#rs button").forEach(x=>x.setAttribute("aria-selected",x===r));$("#em").value=r.dataset.r+"@examguard.test"}});
