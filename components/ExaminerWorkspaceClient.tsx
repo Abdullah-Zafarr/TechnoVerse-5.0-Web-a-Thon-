@@ -1978,17 +1978,56 @@ export default function ExaminerWorkspaceClient({
                         const rawText = (await file.text()).replace(/^\uFEFF/, "");
                         const lowerName = file.name.toLowerCase();
                         const trimmed = rawText.trimStart();
-                        if (lowerName.endsWith(".json")) {
-                          setImportFormat("json");
-                        } else if (lowerName.endsWith(".csv")) {
-                          setImportFormat("csv");
-                        } else if (
-                          trimmed.startsWith("[") ||
-                          trimmed.startsWith("{")
-                        ) {
-                          setImportFormat("json");
-                        } else {
-                          setImportFormat("csv");
+                        const isJsonFile =
+                          lowerName.endsWith(".json") ||
+                          (!lowerName.endsWith(".csv") &&
+                            (trimmed.startsWith("[") ||
+                              trimmed.startsWith("{")));
+                        setImportFormat(isJsonFile ? "json" : "csv");
+                        if (!isJsonFile) {
+                          const headerCols = (trimmed.split(/\r?\n/, 1)[0] ?? "")
+                            .split(/[,;\t]/)
+                            .map((h) =>
+                              h
+                                .replace(/^["']|["']$/g, "")
+                                .trim()
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]+/g, "_")
+                                .replace(/^_+|_+$/g, "")
+                            );
+                          const looksLikeCandidates =
+                            headerCols.some((c) =>
+                              ["email", "emailaddress", "email_address"].includes(c)
+                            ) &&
+                            !headerCols.some((c) =>
+                              [
+                                "prompt",
+                                "question",
+                                "question_text",
+                                "options",
+                                "option1",
+                                "option_1",
+                                "option_a",
+                                "optiona",
+                              ].includes(c)
+                            );
+                          const looksLikeQuestions = headerCols.some((c) =>
+                            [
+                              "prompt",
+                              "question",
+                              "question_text",
+                              "options",
+                              "option1",
+                              "option_1",
+                              "option_a",
+                              "optiona",
+                            ].includes(c)
+                          );
+                          if (looksLikeCandidates) {
+                            setImportKind("candidates");
+                          } else if (looksLikeQuestions) {
+                            setImportKind("questions");
+                          }
                         }
                         setImportContent(rawText);
                         setImportResult(null);
@@ -2035,9 +2074,14 @@ export default function ExaminerWorkspaceClient({
                     </p>
                     {importResult.errors.length > 0 && (
                       <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#B91C1C]">
-                        {importResult.errors.map((err, i) => (
+                        {importResult.errors.slice(0, 25).map((err, i) => (
                           <li key={i}>{err}</li>
                         ))}
+                        {importResult.errors.length > 25 && (
+                          <li className="list-none font-medium text-[#7F1D1D]">
+                            ...and {importResult.errors.length - 25} more error(s).
+                          </li>
+                        )}
                       </ul>
                     )}
                   </div>

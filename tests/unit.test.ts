@@ -506,6 +506,46 @@ test("importParser: handles JSON option objects, correctOptionIds, wrapped array
   assert.equal(validatedC.errors.length, 1);
 });
 
+test("importParser: normalizes spaced CSV headers, Option A/B columns, title-only prompts, and detects candidate CSV mismatch", () => {
+  const spacedCsv = [
+    "Question Text,Question Type,Subject,Points,Option A,Option B,Option C,Correct Answer",
+    "What is 2+2?,Multiple Choice,Math,3,3,4,5,Option B",
+    "Capital of France?,MCQ,Geography,2,London,Paris,Rome,B)",
+  ].join("\n");
+
+  const parsedSpaced = parseImportRows("csv", spacedCsv, "questions");
+  assert.equal(parsedSpaced.ok, true);
+  if (!parsedSpaced.ok) return;
+  const resSpaced = validateQuestionRows(parsedSpaced.rows, parsedSpaced.badRowIndices);
+  assert.equal(resSpaced.errors.length, 0);
+  assert.equal(resSpaced.validQuestions.length, 2);
+  assert.equal(resSpaced.validQuestions[0].topic, "Math");
+  assert.equal(resSpaced.validQuestions[0].marks, 3);
+  assert.deepEqual(resSpaced.validQuestions[0].correctOptionIds, ["o2"]);
+  assert.deepEqual(resSpaced.validQuestions[1].correctOptionIds, ["o2"]);
+
+  const titleOnlyCsv = [
+    "Title,Option 1,Option 2,Answer",
+    "HTTP is stateless?,True,False,1",
+  ].join("\n");
+  const parsedTitleOnly = parseImportRows("csv", titleOnlyCsv, "questions");
+  assert.equal(parsedTitleOnly.ok, true);
+  if (!parsedTitleOnly.ok) return;
+  const resTitleOnly = validateQuestionRows(parsedTitleOnly.rows, parsedTitleOnly.badRowIndices);
+  assert.equal(resTitleOnly.errors.length, 0);
+  assert.equal(resTitleOnly.validQuestions.length, 1);
+  assert.equal(resTitleOnly.validQuestions[0].prompt, "HTTP is stateless?");
+
+  const candidateCsv = "Full Name,Email Address\nBilal Khan,bilal@example.edu\nSana Ali,sana@example.edu";
+  const parsedCandAsQ = parseImportRows("csv", candidateCsv, "questions");
+  assert.equal(parsedCandAsQ.ok, true);
+  if (!parsedCandAsQ.ok) return;
+  const resCandAsQ = validateQuestionRows(parsedCandAsQ.rows, parsedCandAsQ.badRowIndices);
+  assert.equal(resCandAsQ.validQuestions.length, 0);
+  assert.equal(resCandAsQ.errors.length, 1);
+  assert.match(resCandAsQ.errors[0], /Switch Import Target to "Candidates"/);
+});
+
 test("outage resilience: getAttemptAutoPauseCapMs and computeAutoPauseCredit enforce bounded server credit", () => {
   assert.equal(getAttemptAutoPauseCapMs(1), 60_000);
   assert.equal(getAttemptAutoPauseCapMs(15), 225_000);

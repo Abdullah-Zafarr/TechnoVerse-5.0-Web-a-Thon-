@@ -27,13 +27,23 @@ function asTrimmedString(value: unknown): string {
   return String(value).trim();
 }
 
+function normalizeHeaderKey(raw: string): string {
+  return raw
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function normalizeJsonRecord(item: unknown): RawRecord | null {
   if (typeof item !== "object" || item === null || Array.isArray(item)) {
     return null;
   }
   const out: RawRecord = {};
   for (const [k, v] of Object.entries(item)) {
-    out[k.trim().toLowerCase()] = v;
+    const key = normalizeHeaderKey(k);
+    if (key) out[key] = v;
   }
   return out;
 }
@@ -112,7 +122,7 @@ export function parseImportRows(
   const csv = Papa.parse<Record<string, string>>(cleaned, {
     header: true,
     skipEmptyLines: "greedy",
-    transformHeader: (h) => h.replace(/^\uFEFF/, "").trim().toLowerCase(),
+    transformHeader: (h) => normalizeHeaderKey(h),
   });
 
   for (const err of csv.errors) {
@@ -167,7 +177,22 @@ function parseOptionsField(raw: unknown, row?: RawRecord): QuestionOption[] {
       .filter((o) => o.text.length > 0);
   }
 
-  const pipeOptions = asTrimmedString(raw)
+  const rawStr = asTrimmedString(raw);
+  if (
+    (rawStr.startsWith("[") && rawStr.endsWith("]")) ||
+    (rawStr.startsWith("{") && rawStr.endsWith("}"))
+  ) {
+    try {
+      const parsedJson = JSON.parse(rawStr);
+      if (parsedJson && typeof parsedJson === "object") {
+        return parseOptionsField(parsedJson, row);
+      }
+    } catch {
+      // Fall through to pipe-delimited parsing.
+    }
+  }
+
+  const pipeOptions = rawStr
     .split("|")
     .map((s) => s.trim())
     .filter(Boolean)
@@ -178,11 +203,11 @@ function parseOptionsField(raw: unknown, row?: RawRecord): QuestionOption[] {
   }
 
   const columnGroups = [
-    ["option1", "option_1", "optiona", "a"],
-    ["option2", "option_2", "optionb", "b"],
-    ["option3", "option_3", "optionc", "c"],
-    ["option4", "option_4", "optiond", "d"],
-    ["option5", "option_5", "optione", "e"],
+    ["option1", "option_1", "optiona", "option_a", "choice1", "choice_1", "choicea", "choice_a", "opt1", "opt_1", "opta", "opt_a", "ans1", "ans_1", "a"],
+    ["option2", "option_2", "optionb", "option_b", "choice2", "choice_2", "choiceb", "choice_b", "opt2", "opt_2", "optb", "opt_b", "ans2", "ans_2", "b"],
+    ["option3", "option_3", "optionc", "option_c", "choice3", "choice_3", "choicec", "choice_c", "opt3", "opt_3", "optc", "opt_c", "ans3", "ans_3", "c"],
+    ["option4", "option_4", "optiond", "option_d", "choice4", "choice_4", "choiced", "choice_d", "opt4", "opt_4", "optd", "opt_d", "ans4", "ans_4", "d"],
+    ["option5", "option_5", "optione", "option_e", "choice5", "choice_5", "choicee", "choice_e", "opt5", "opt_5", "opte", "opt_e", "ans5", "ans_5", "e"],
   ];
   const fromColumns: QuestionOption[] = [];
   for (const aliases of columnGroups) {
@@ -198,20 +223,62 @@ function parseOptionsField(raw: unknown, row?: RawRecord): QuestionOption[] {
 }
 
 function normalizeQuestionType(raw: unknown): string {
-  const value = asTrimmedString(raw).toLowerCase();
+  const value = asTrimmedString(raw).toLowerCase().replace(/[\s-]+/g, "_");
   if (!value) return "single_mcq";
-  if (["mcq", "single", "single_choice", "single-choice"].includes(value)) {
+  if (
+    [
+      "mcq",
+      "single",
+      "single_choice",
+      "single_mcq",
+      "multiple_choice",
+      "mcq_single",
+      "true_false",
+      "true/false",
+      "tf",
+    ].includes(value)
+  ) {
     return "single_mcq";
   }
   if (
-    ["multi", "multiple", "multiple_select", "multiple-select", "checkbox"].includes(
-      value
-    )
+    [
+      "multi",
+      "multiple",
+      "multiple_select",
+      "multi_select",
+      "multi_mcq",
+      "checkbox",
+      "checkboxes",
+    ].includes(value)
   ) {
     return "multi_select";
   }
-  if (["essay", "short_answer", "short-answer", "open", "subjective"].includes(value)) {
+  if (
+    [
+      "essay",
+      "short_answer",
+      "long_answer",
+      "free_text",
+      "descriptive",
+      "open",
+      "subjective",
+      "text",
+    ].includes(value)
+  ) {
     return "written";
+  }
+  return value;
+}
+
+function normalizeDifficulty(raw: unknown): string {
+  const value = asTrimmedString(raw).toLowerCase();
+  if (!value) return "medium";
+  if (["easy", "low", "beginner", "basic", "1"].includes(value)) return "easy";
+  if (["medium", "moderate", "normal", "intermediate", "2"].includes(value)) {
+    return "medium";
+  }
+  if (["hard", "high", "advanced", "difficult", "3"].includes(value)) {
+    return "hard";
   }
   return value;
 }
@@ -247,6 +314,52 @@ export function validateQuestionRows(
   const validQuestions: ValidatedQuestionRow[] = [];
   const errors: string[] = [];
 
+  const firstObj = rows.find((r): r is RawRecord => r !== null);
+  if (firstObj) {
+    const keys = Object.keys(firstObj);
+    const hasEmailCol = keys.some((k) =>
+      ["email", "emailaddress", "email_address", "mail"].includes(k)
+    );
+    const hasQuestionCol = keys.some((k) =>
+      [
+        "prompt",
+        "question",
+        "question_text",
+        "questiontext",
+        "question_prompt",
+        "question_body",
+        "question_stem",
+        "stem",
+        "text",
+        "statement",
+        "problem",
+        "problem_statement",
+        "description",
+        "body",
+        "content",
+        "query",
+        "q",
+        "q_text",
+        "mcq",
+        "item",
+        "title",
+        "question_title",
+        "options",
+        "choices",
+        "option1",
+        "option_1",
+        "optiona",
+        "option_a",
+      ].includes(k)
+    );
+    if (hasEmailCol && !hasQuestionCol) {
+      errors.push(
+        `Detected candidate columns (${keys.join(", ")}). Switch Import Target to "Candidates" and retry.`
+      );
+      return { validQuestions, errors };
+    }
+  }
+
   for (let index = 0; index < rows.length; index++) {
     if (badRowIndices.has(index)) continue;
 
@@ -257,23 +370,58 @@ export function validateQuestionRows(
       continue;
     }
 
-    const prompt = asTrimmedString(
+    const explicitTitle = asTrimmedString(
+      row.title ?? row.question_title ?? row.heading
+    );
+    const rawPrompt = asTrimmedString(
       row.prompt ??
         row.question ??
         row.question_text ??
         row.questiontext ??
+        row.question_prompt ??
+        row.question_body ??
+        row.question_stem ??
+        row.stem ??
         row.text ??
-        row.statement
+        row.statement ??
+        row.problem ??
+        row.problem_statement ??
+        row.description ??
+        row.body ??
+        row.content ??
+        row.query ??
+        row.q ??
+        row.q_text ??
+        row.mcq ??
+        row.item
     );
-    const rawTitle = asTrimmedString(row.title ?? row.name ?? row.code);
+    const prompt = rawPrompt || explicitTitle;
+    const rawTitle = explicitTitle || asTrimmedString(row.name ?? row.code);
     const title = rawTitle || (prompt ? prompt.slice(0, 60).trim() : "");
-    const type = normalizeQuestionType(row.type) as QuestionType;
-    const topic = asTrimmedString(row.topic) || "Imported";
-    const difficulty = (asTrimmedString(row.difficulty).toLowerCase() ||
-      "medium") as Difficulty;
-    const rawMarks = asTrimmedString(row.marks);
+    const type = normalizeQuestionType(
+      row.type ?? row.question_type ?? row.questiontype ?? row.kind
+    ) as QuestionType;
+    const topic =
+      asTrimmedString(
+        row.topic ??
+          row.subject ??
+          row.category ??
+          row.chapter ??
+          row.module ??
+          row.section ??
+          row.course ??
+          row.tag
+      ) || "Imported";
+    const difficulty = normalizeDifficulty(
+      row.difficulty ?? row.level ?? row.diff
+    ) as Difficulty;
+    const rawMarks = asTrimmedString(
+      row.marks ?? row.points ?? row.score ?? row.weight ?? row.max_marks
+    );
     const marks = rawMarks === "" ? 2 : Number(rawMarks);
-    const rubric = asTrimmedString(row.rubric);
+    const rubric = asTrimmedString(
+      row.rubric ?? row.explanation ?? row.grading_rubric ?? row.marking_scheme
+    );
 
     if (!title || !prompt) {
       errors.push(`Row ${rowNum}: missing title or prompt`);
@@ -292,14 +440,25 @@ export function validateQuestionRows(
       continue;
     }
 
-    const options = parseOptionsField(row.options, row);
+    const options = parseOptionsField(
+      row.options ?? row.choices ?? row.alternatives,
+      row
+    );
     const rawCorrect = parseCorrectTokens(
       row.correct ??
         row.correctoptionids ??
         row.correct_option_ids ??
+        row.correct_options ??
         row.correct_option ??
         row.correct_answer ??
+        row.correct_answers ??
+        row.correctanswer ??
         row.answer ??
+        row.answer_key ??
+        row.correct_choice ??
+        row.right_answer ??
+        row.solution ??
+        row.key ??
         row.ans
     );
 
@@ -331,12 +490,18 @@ export function validateQuestionRows(
 
     if (type !== "written") {
       for (const token of rawCorrect) {
-        const numeric = Number(token);
+        const cleanedToken = token
+          .replace(/^(?:option|choice|opt)\s+/i, "")
+          .replace(/^[([]?([A-Ea-e1-5])[)\].:]?$/, "$1")
+          .trim();
+        const numeric = Number(cleanedToken);
         const textMatch = options.find(
           (o) => o.text.toLowerCase() === token.toLowerCase()
         );
-        if (
-          token !== "" &&
+        if (textMatch) {
+          mappedCorrect.push(textMatch.id);
+        } else if (
+          cleanedToken !== "" &&
           Number.isInteger(numeric) &&
           numeric >= 1 &&
           numeric <= options.length
@@ -344,15 +509,13 @@ export function validateQuestionRows(
           mappedCorrect.push(options[numeric - 1].id);
         } else if (optionIds.has(token)) {
           mappedCorrect.push(token);
-        } else if (/^[A-Ea-e]$/.test(token)) {
-          const letterIdx = token.toUpperCase().charCodeAt(0) - 65;
+        } else if (/^[A-Ea-e]$/.test(cleanedToken)) {
+          const letterIdx = cleanedToken.toUpperCase().charCodeAt(0) - 65;
           if (letterIdx < 0 || letterIdx >= options.length) {
             hasInvalidIndex = true;
             break;
           }
           mappedCorrect.push(options[letterIdx].id);
-        } else if (textMatch) {
-          mappedCorrect.push(textMatch.id);
         } else {
           hasInvalidIndex = true;
           break;
@@ -386,6 +549,18 @@ export function validateQuestionRows(
       correctOptionIds: type === "written" ? [] : correctOptionIds,
       rubric: type === "written" ? rubric || null : null,
     });
+  }
+
+  if (
+    validQuestions.length === 0 &&
+    errors.length > 0 &&
+    errors.every((e) => e.endsWith("missing title or prompt")) &&
+    firstObj
+  ) {
+    const detected = Object.keys(firstObj).filter(Boolean);
+    errors.unshift(
+      `Detected columns: ${detected.length > 0 ? detected.join(", ") : "(none)"}. Expected a question/prompt column (e.g. prompt, question, question_text, or title).`
+    );
   }
 
   return { validQuestions, errors };
