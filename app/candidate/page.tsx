@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import TopNav from "@/components/TopNav";
+import { fetchSessionUser, getCachedSessionUser } from "@/lib/clientSession";
 import type { QuestionOption, QuestionType, SafeUser } from "@/lib/types";
 
 interface CandidateExamItem {
@@ -69,7 +70,7 @@ interface BreakdownPayload {
 }
 
 export default function CandidatePage() {
-  const [user, setUser] = useState<SafeUser | null>(null);
+  const [user, setUser] = useState<SafeUser | null>(() => getCachedSessionUser());
   const [exams, setExams] = useState<CandidateExamItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,23 +82,31 @@ export default function CandidatePage() {
   const [breakdownLoading, setBreakdownLoading] = useState(false);
 
   useEffect(() => {
+    let active = true;
     async function load() {
-      const meRes = await fetch("/api/auth/me");
-      const meData = (await meRes.json()) as { user: SafeUser | null };
-      setUser(meData.user);
+      const [meUser, res] = await Promise.all([
+        fetchSessionUser(),
+        fetch("/api/exams"),
+      ]);
+      if (!active) return;
+      setUser(meUser);
 
-      const res = await fetch("/api/exams");
       if (!res.ok) {
         const err = (await res.json()) as { error?: string };
+        if (!active) return;
         setError(err.error ?? "Sign in as a candidate to view examinations.");
         setLoading(false);
         return;
       }
       const data = (await res.json()) as { exams: CandidateExamItem[] };
+      if (!active) return;
       setExams(data.exams);
       setLoading(false);
     }
     load();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {

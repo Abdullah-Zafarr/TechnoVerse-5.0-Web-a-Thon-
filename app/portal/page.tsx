@@ -15,6 +15,11 @@ import {
   LogOut,
 } from "lucide-react";
 import type { SafeUser } from "@/lib/types";
+import {
+  clearCachedSessionUser,
+  fetchSessionUser,
+  getCachedSessionUser,
+} from "@/lib/clientSession";
 
 interface PreviewQuestion {
   num: string;
@@ -110,7 +115,7 @@ const CAPABILITIES = [
 
 export default function PortalPage() {
   const router = useRouter();
-  const [user, setUser] = useState<SafeUser | null>(null);
+  const [user, setUser] = useState<SafeUser | null>(() => getCachedSessionUser());
 
   const [previewIdx, setPreviewIdx] = useState(2);
   const [previewChoice, setPreviewChoice] = useState<Record<number, number>>({
@@ -124,21 +129,18 @@ export default function PortalPage() {
   });
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d: { user: SafeUser | null }) => setUser(d.user))
-      .catch(() => {});
+    fetchSessionUser().then((u) => setUser(u)).catch(() => {});
   }, []);
 
   function routeForUser(u: SafeUser) {
     if (u.role === "admin") router.push("/admin");
     else if (u.role === "examiner") router.push("/examiner");
     else router.push("/candidate");
-    router.refresh();
   }
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    clearCachedSessionUser();
     setUser(null);
     router.refresh();
   }

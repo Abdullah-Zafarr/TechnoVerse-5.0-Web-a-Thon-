@@ -20,6 +20,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import TopNav from "@/components/TopNav";
+import { fetchSessionUser, getCachedSessionUser } from "@/lib/clientSession";
 import { getSupabaseBrowserClient } from "@/lib/realtime";
 import type {
   Difficulty,
@@ -213,7 +214,7 @@ function previewStratifiedQuotas(
 }
 
 export default function ExaminerPage() {
-  const [me, setMe] = useState<SafeUser | null>(null);
+  const [me, setMe] = useState<SafeUser | null>(() => getCachedSessionUser());
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabId>("exams");
   const [error, setError] = useState<string | null>(null);
@@ -311,18 +312,17 @@ export default function ExaminerPage() {
   >({});
   const [confirmPublishWarning, setConfirmPublishWarning] = useState(false);
 
-  const loadBase = useCallback(async () => {
-    setLoading(true);
+  const loadBase = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
-    const meRes = await fetch("/api/auth/me");
-    const meData = (await meRes.json()) as { user: SafeUser | null };
-    setMe(meData.user);
 
-    const [exRes, qRes, uRes] = await Promise.all([
+    const [meUser, exRes, qRes, uRes] = await Promise.all([
+      silent ? Promise.resolve(undefined) : fetchSessionUser(),
       fetch("/api/exams"),
       fetch("/api/questions"),
       fetch("/api/admin/users"),
     ]);
+    if (meUser !== undefined) setMe(meUser);
 
     if (!exRes.ok || !qRes.ok) {
       setError("Sign in as Examiner or Administrator to manage examinations.");
@@ -330,11 +330,13 @@ export default function ExaminerPage() {
       return;
     }
 
-    const exData = (await exRes.json()) as { exams: ExaminerExam[] };
-    const qData = (await qRes.json()) as { questions: ExaminerQuestion[] };
-    const uData = uRes.ok
-      ? ((await uRes.json()) as { users: SafeUser[] })
-      : { users: [] };
+    const [exData, qData, uData] = await Promise.all([
+      exRes.json() as Promise<{ exams: ExaminerExam[] }>,
+      qRes.json() as Promise<{ questions: ExaminerQuestion[] }>,
+      uRes.ok
+        ? (uRes.json() as Promise<{ users: SafeUser[] }>)
+        : Promise.resolve({ users: [] as SafeUser[] }),
+    ]);
 
     setExams(exData.exams);
     setQuestions(qData.questions);
@@ -342,25 +344,26 @@ export default function ExaminerPage() {
     setCandidates(cands);
     setLoading(false);
 
-    if (selectedQIds.length === 0 && qData.questions.length > 0) {
-      setSelectedQIds(qData.questions.slice(0, 4).map((q) => q.id));
+    if (qData.questions.length > 0) {
+      setSelectedQIds((prev) =>
+        prev.length === 0 ? qData.questions.slice(0, 4).map((q) => q.id) : prev
+      );
     }
-    if (selectedCandIds.length === 0 && cands.length > 0) {
-      setSelectedCandIds(cands.map((c) => c.id));
+    if (cands.length > 0) {
+      setSelectedCandIds((prev) =>
+        prev.length === 0 ? cands.map((c) => c.id) : prev
+      );
     }
-    if (!importExamId && exData.exams[0]) setImportExamId(exData.exams[0].id);
-    if (!monitorExamId && exData.exams[0]) setMonitorExamId(exData.exams[0].id);
-    if (!gradeExamId && exData.exams[0]) setGradeExamId(exData.exams[0].id);
-  }, [
-    gradeExamId,
-    importExamId,
-    monitorExamId,
-    selectedCandIds.length,
-    selectedQIds.length,
-  ]);
+    const firstExamId = exData.exams[0]?.id;
+    if (firstExamId) {
+      setImportExamId((prev) => prev || firstExamId);
+      setMonitorExamId((prev) => prev || firstExamId);
+      setGradeExamId((prev) => prev || firstExamId);
+    }
+  }, []);
 
   useEffect(() => {
-    loadBase();
+    void loadBase();
   }, [loadBase]);
 
   useEffect(() => {
@@ -473,7 +476,7 @@ export default function ExaminerPage() {
     }
     setExamTitle("");
     setNotice(`Created ${data.exam?.code} in draft state.`);
-    await loadBase();
+    await loadBase(true);
   }
 
   async function patchExam(examId: string, patch: Record<string, unknown>) {
@@ -490,7 +493,7 @@ export default function ExaminerPage() {
       return false;
     }
     setNotice("Examination updated");
-    await loadBase();
+    await loadBase(true);
     if (tab === "grading") await loadGrading();
     return true;
   }
@@ -600,7 +603,7 @@ export default function ExaminerPage() {
     setQPrompt("");
     setQRubric("");
     setNotice(editingQId ? "Updated question." : "Added question to bank.");
-    await loadBase();
+    await loadBase(true);
   }
 
   async function handleDeleteQuestion(qId: string) {
@@ -617,7 +620,7 @@ export default function ExaminerPage() {
     setNotice(
       "Deleted question from bank (active attempt snapshots stay protected)."
     );
-    await loadBase();
+    await loadBase(true);
   }
 
   async function handleImport(e: React.FormEvent) {
@@ -647,7 +650,7 @@ export default function ExaminerPage() {
       importedCount: data.importedCount ?? 0,
       errors: data.errors ?? [],
     });
-    await loadBase();
+    await loadBase(true);
   }
 
   async function handleSendAnnouncement(e: React.FormEvent) {

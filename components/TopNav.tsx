@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ShieldCheck, LogOut, QrCode } from "lucide-react";
+import { clearCachedSessionUser } from "@/lib/clientSession";
 import type { SafeUser } from "@/lib/types";
 
 interface TopNavProps {
@@ -14,9 +15,9 @@ export default function TopNav({ user }: TopNavProps) {
   const router = useRouter();
 
   async function handleLogout() {
+    clearCachedSessionUser();
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
-    router.refresh();
   }
 
   return (

@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ShieldCheck, ShieldX, Search } from "lucide-react";
 import TopNav from "@/components/TopNav";
+import { fetchSessionUser, getCachedSessionUser } from "@/lib/clientSession";
 import type { SafeUser } from "@/lib/types";
 
 interface VerifyResponse {
@@ -23,16 +24,13 @@ interface VerifyResponse {
 export default function VerifyReportPage() {
   const params = useParams<{ code: string }>();
   const router = useRouter();
-  const [user, setUser] = useState<SafeUser | null>(null);
+  const [user, setUser] = useState<SafeUser | null>(() => getCachedSessionUser());
   const [lookupCode, setLookupCode] = useState(params.code || "EG-DEMO2026");
   const [result, setResult] = useState<VerifyResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d: { user: SafeUser | null }) => setUser(d.user))
-      .catch(() => {});
+    fetchSessionUser().then((u) => setUser(u)).catch(() => {});
   }, []);
 
   useEffect(() => {

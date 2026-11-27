@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { UserPlus, ShieldAlert, Pencil, X } from "lucide-react";
 import TopNav from "@/components/TopNav";
+import { fetchSessionUser, getCachedSessionUser } from "@/lib/clientSession";
 import type { Role, SafeUser } from "@/lib/types";
 
 interface AuditEntry {
@@ -17,7 +18,7 @@ interface AuditEntry {
 type AdminSection = "all" | "users" | "audit";
 
 export default function AdminPage() {
-  const [me, setMe] = useState<SafeUser | null>(null);
+  const [me, setMe] = useState<SafeUser | null>(() => getCachedSessionUser());
   const [section, setSection] = useState<AdminSection>("all");
   const [users, setUsers] = useState<SafeUser[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
@@ -35,14 +36,15 @@ export default function AdminPage() {
   const [editRole, setEditRole] = useState<Role>("candidate");
   const [editPassword, setEditPassword] = useState("");
 
-  async function loadAll() {
-    setLoading(true);
+  async function loadAll(silent = false) {
+    if (!silent) setLoading(true);
     setError(null);
-    const meRes = await fetch("/api/auth/me");
-    const meData = (await meRes.json()) as { user: SafeUser | null };
-    setMe(meData.user);
+    const [meUser, res] = await Promise.all([
+      silent ? Promise.resolve(me) : fetchSessionUser(),
+      fetch("/api/admin/users"),
+    ]);
+    if (!silent) setMe(meUser);
 
-    const res = await fetch("/api/admin/users");
     if (!res.ok) {
       const err = (await res.json()) as { error?: string };
       setError(err.error ?? "Administrator access required");
@@ -92,7 +94,7 @@ export default function AdminPage() {
     setName("");
     setEmail("");
     setNotice(`Created ${data.user?.email}`);
-    await loadAll();
+    await loadAll(true);
   }
 
   async function handleUpdateUser(
@@ -112,7 +114,7 @@ export default function AdminPage() {
       return false;
     }
     setNotice("Account updated");
-    await loadAll();
+    await loadAll(true);
     return true;
   }
 

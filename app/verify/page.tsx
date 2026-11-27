@@ -5,18 +5,16 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, ShieldCheck } from "lucide-react";
 import TopNav from "@/components/TopNav";
+import { fetchSessionUser, getCachedSessionUser } from "@/lib/clientSession";
 import type { SafeUser } from "@/lib/types";
 
 export default function VerifyIndexPage() {
   const router = useRouter();
-  const [user, setUser] = useState<SafeUser | null>(null);
+  const [user, setUser] = useState<SafeUser | null>(() => getCachedSessionUser());
   const [code, setCode] = useState("EG-DEMO2026");
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d: { user: SafeUser | null }) => setUser(d.user))
-      .catch(() => {});
+    fetchSessionUser().then((u) => setUser(u)).catch(() => {});
   }, []);
 
   function handleSubmit(e: React.FormEvent) {
