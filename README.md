@@ -155,3 +155,5 @@ npm test
 
 ### Public Report Verification
 ![Public Report Verification](docs/screenshots/verify.png)
+
+UI prototype by Rehab Tariq: see the prototype folder on branch feat/ui-prototype.
