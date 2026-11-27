@@ -544,6 +544,34 @@ test("importParser: normalizes spaced CSV headers, Option A/B columns, title-onl
   assert.equal(resCandAsQ.validQuestions.length, 0);
   assert.equal(resCandAsQ.errors.length, 1);
   assert.match(resCandAsQ.errors[0], /Switch Import Target to "Candidates"/);
+
+  // Single JSON object record (not wrapped in an array)
+  const singleObjJson = JSON.stringify({
+    title: "Single JSON Q",
+    prompt: "Which protocol is connectionless?",
+    options: ["TCP", "UDP"],
+    correct: "UDP",
+  });
+  const parsedSingle = parseImportRows("json", singleObjJson, "questions");
+  assert.equal(parsedSingle.ok, true);
+  if (!parsedSingle.ok) return;
+  const resSingle = validateQuestionRows(parsedSingle.rows, parsedSingle.badRowIndices);
+  assert.equal(resSingle.errors.length, 0);
+  assert.equal(resSingle.validQuestions.length, 1);
+  assert.deepEqual(resSingle.validQuestions[0].correctOptionIds, ["o2"]);
+
+  // Custom wrapper key JSON object
+  const customWrapperJson = JSON.stringify({
+    exported_payload: [
+      { name: "Tariq Mahmood", email: "tariq@example.edu" },
+    ],
+  });
+  const parsedCustomWrap = parseImportRows("json", customWrapperJson, "candidates");
+  assert.equal(parsedCustomWrap.ok, true);
+  if (!parsedCustomWrap.ok) return;
+  const resCustomWrap = validateCandidateRows(parsedCustomWrap.rows, parsedCustomWrap.badRowIndices);
+  assert.equal(resCustomWrap.errors.length, 0);
+  assert.equal(resCustomWrap.validCandidates.length, 1);
 });
 
 test("outage resilience: getAttemptAutoPauseCapMs and computeAutoPauseCredit enforce bounded server credit", () => {

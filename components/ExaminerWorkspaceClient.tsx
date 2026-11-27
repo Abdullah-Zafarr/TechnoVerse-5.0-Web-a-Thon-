@@ -255,6 +255,7 @@ export default function ExaminerWorkspaceClient({
   );
 
   const [visibleExamsCount, setVisibleExamsCount] = useState(3);
+  const [visibleQuestionsCount, setVisibleQuestionsCount] = useState(5);
 
   // Create exam form
   const [examCode, setExamCode] = useState("CS-399");
@@ -1659,13 +1660,19 @@ export default function ExaminerWorkspaceClient({
                       aria-label="Search questions"
                       placeholder="Search title, topic, or prompt"
                       value={qSearch}
-                      onChange={(e) => setQSearch(e.target.value)}
+                      onChange={(e) => {
+                        setQSearch(e.target.value);
+                        setVisibleQuestionsCount(5);
+                      }}
                       className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] px-3 py-2 text-sm sm:min-h-[40px] sm:min-w-[180px] sm:flex-1"
                     />
                     <select
                       aria-label="Filter by topic"
                       value={qFilterTopic}
-                      onChange={(e) => setQFilterTopic(e.target.value)}
+                      onChange={(e) => {
+                        setQFilterTopic(e.target.value);
+                        setVisibleQuestionsCount(5);
+                      }}
                       className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs sm:min-h-[40px] sm:w-auto"
                     >
                       <option value="all">All topics</option>
@@ -1678,7 +1685,10 @@ export default function ExaminerWorkspaceClient({
                     <select
                       aria-label="Filter by type"
                       value={qFilterType}
-                      onChange={(e) => setQFilterType(e.target.value)}
+                      onChange={(e) => {
+                        setQFilterType(e.target.value);
+                        setVisibleQuestionsCount(5);
+                      }}
                       className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs sm:min-h-[40px] sm:w-auto"
                     >
                       <option value="all">All types</option>
@@ -1689,7 +1699,10 @@ export default function ExaminerWorkspaceClient({
                     <select
                       aria-label="Filter by difficulty"
                       value={qFilterDiff}
-                      onChange={(e) => setQFilterDiff(e.target.value)}
+                      onChange={(e) => {
+                        setQFilterDiff(e.target.value);
+                        setVisibleQuestionsCount(5);
+                      }}
                       className="min-h-[44px] w-full rounded-lg border border-[rgba(15,23,42,0.14)] bg-white px-2.5 py-2 text-xs sm:min-h-[40px] sm:w-auto"
                     >
                       <option value="all">All difficulties</option>
@@ -1711,6 +1724,7 @@ export default function ExaminerWorkspaceClient({
                           setQFilterTopic("all");
                           setQFilterType("all");
                           setQFilterDiff("all");
+                          setVisibleQuestionsCount(5);
                         }}
                         className="mt-3 min-h-[40px] cursor-pointer rounded-lg border border-[rgba(15,23,42,0.14)] px-3.5 py-2 text-xs font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
                       >
@@ -1718,7 +1732,8 @@ export default function ExaminerWorkspaceClient({
                       </button>
                     </div>
                   ) : (
-                    filteredQuestions.map((q) => (
+                    <>
+                    {filteredQuestions.slice(0, visibleQuestionsCount).map((q) => (
                       <div
                         key={q.id}
                         className="rounded-xl border border-[rgba(15,23,42,0.10)] bg-white p-4"
@@ -1779,7 +1794,24 @@ export default function ExaminerWorkspaceClient({
                           </p>
                         )}
                       </div>
-                    ))
+                    ))}
+                    {visibleQuestionsCount < filteredQuestions.length && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setVisibleQuestionsCount((prev) => prev + 5)
+                        }
+                        className="inline-flex min-h-[40px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[rgba(15,23,42,0.14)] bg-white px-4 py-2 text-xs font-medium text-[#0F172A] transition-colors hover:bg-[#EEF2F6]"
+                      >
+                        <span>
+                          Load more (
+                          {filteredQuestions.length - visibleQuestionsCount}{" "}
+                          remaining)
+                        </span>
+                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    )}
+                    </>
                   )}
                 </section>
               </div>

@@ -55,11 +55,45 @@ function unwrapJsonArray(
   if (Array.isArray(parsed)) return parsed;
   if (typeof parsed === "object" && parsed !== null) {
     const obj = parsed as Record<string, unknown>;
-    const candidateKeys = [kind, "items", "data", "records"];
+    const candidateKeys = [
+      kind,
+      "items",
+      "data",
+      "records",
+      "rows",
+      "results",
+      "list",
+      "entries",
+      "users",
+      "students",
+      "question_bank",
+      "bank",
+    ];
     for (const key of candidateKeys) {
       if (Array.isArray(obj[key])) {
         return obj[key] as unknown[];
       }
+    }
+
+    // Check if the object itself is a single record before scanning arbitrary array fields
+    // (a single question record has `options` / `correctOptionIds` arrays).
+    const normalizedKeys = new Set(Object.keys(obj).map(normalizeHeaderKey));
+    const singleRecordHints =
+      kind === "questions"
+        ? ["title", "prompt", "question", "question_text", "text", "statement", "body"]
+        : ["name", "full_name", "candidate_name", "email", "mail", "email_address"];
+    if (singleRecordHints.some((hint) => normalizedKeys.has(hint))) {
+      return [obj];
+    }
+
+    for (const val of Object.values(obj)) {
+      if (Array.isArray(val)) {
+        return val;
+      }
+    }
+
+    if (Object.keys(obj).length > 0) {
+      return [obj];
     }
   }
   return null;
@@ -89,12 +123,29 @@ export function parseImportRows(
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      return {
-        ok: false,
-        error: "Invalid JSON syntax",
-        status: 400,
-        errors,
-      };
+      const lines = cleaned
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (lines.length > 0) {
+        try {
+          parsed = lines.map((line) => JSON.parse(line));
+        } catch {
+          return {
+            ok: false,
+            error: "Invalid JSON syntax",
+            status: 400,
+            errors,
+          };
+        }
+      } else {
+        return {
+          ok: false,
+          error: "Invalid JSON syntax",
+          status: 400,
+          errors,
+        };
+      }
     }
 
     const list = unwrapJsonArray(parsed, kind);
